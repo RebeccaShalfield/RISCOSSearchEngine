@@ -1,0 +1,308 @@
+a:focus {
+    font-weight : bold;
+    color : green;
+}
+
+a:link {
+    color : #55799C;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+a:visited {
+    color : red;
+}
+
+body {
+    font-family : Garamond, Times, "New Century Schoolbook", serif;
+    margin : 0;
+}
+
+.resultheader {
+  background-image: -moz-linear-gradient(left, #222222 0%, white 100%);
+  background-image: -o-linear-gradient(left, #222222 0%, white 100%);
+  background-image: -webkit-linear-gradient(left, #222222 0%, white 100%);
+  background-image: -ms-linear-gradient(left, #222222 0%, white 100%);
+  color : #6877A3;
+  font-size : 14pt;
+  font-weight : bold;
+  text-align : left;
+  padding : 2pt;
+}
+
+.software {
+  border-radius : 5px;
+  -moz-border-radius : 5px;
+  -o-border-radius : 5px;
+  -webkit-border-radius : 5px;
+  border : #EEEEEE outset 0.1em;
+  background-color : white;
+  font-size : 10pt;
+  margin: 2pt auto;
+  margin-bottom: 48px;
+}
+
+#searchcriteria, #regex {
+  border-radius : 5px;
+  -moz-border-radius : 5px;
+  -o-border-radius : 5px;
+  -webkit-border-radius : 5px;
+  border : #EEEEEE outset 0.1em;
+  background-color : white;
+  font-size : 10pt;
+  margin: 2pt auto;
+}
+
+.maincontent {
+    text-align : center;
+}
+
+img {
+    border : 0;
+}
+
+.sourcecode {
+  border-radius : 5px;
+  -moz-border-radius : 5px;
+  -o-border-radius : 5px;
+  -webkit-border-radius : 5px;
+  border : #EEEEEE outset 0.1em;
+  margin-top : 2pt;
+  margin-bottom : 2pt;
+  margin-left : 2pt;
+  margin-right : 2pt;
+  background-color : #1111FF;
+  color : white;
+  font-size : 12pt;
+  text-align : left;
+}
+
+ul {
+    margin : 0px;
+    padding-left : 14px;
+    text-align : left;
+}
+
+.embedded {
+    border : 1px dotted #AAAAAA;
+    
+}
+
+.embedded td {
+    border : 1px dotted #AAAAAA;
+}
+
+li {
+    margin : 0px;
+}
+
+.error {
+   color : red;
+}
+
+.warning {
+    color : red;
+    font-size : 12pt;  
+}
+
+.software th, #searchcriteria th, #regex th {
+    background-color : #C0DBF2;
+    color : maroon;
+    font-size : 12pt;
+}
+
+.software td, #searchcriteria td, #regex td {
+    background-color : #EBF3FE;
+    color : black;
+    font-size : 12pt;
+}
+
+#header {
+    background-color : maroon;
+    color : #FDE990;
+    width : 100%;
+    left : 0pt;
+    top : 0;
+    margin : auto;
+    padding : 1pt;
+}
+
+#title {
+    background-color : maroon;
+    color : #FDE990;
+    font-size : 20pt;
+    text-align : center;
+    text-shadow : 0 0 0.1em #F00;
+    margin : 0pt;
+}
+
+#infobar {
+    color : #333333;
+    background-color : #DDDDDD;
+    font-size : 10pt;
+    margin : 0pt;
+    width : 100%;
+}
+
+form.inline {
+    display : inline;
+    padding: 0px;
+}
+
+a.external {
+    border-radius : 3px;
+    -moz-border-radius : 3px;
+    -o-border-radius : 3px;
+    -webkit-border-radius : 3px;
+    background-color : #6BC04D;
+    color : #EEFFFF;
+    border : #4463A3 solid 0.1em;
+    padding: 3px;
+}
+
+a.external:hover {
+    background-color : #6BC04D;
+    text-decoration: none;
+    color : blue;
+}
+
+input {
+    border-radius : 3px;
+    -moz-border-radius : 3px;
+    -o-border-radius : 3px;
+    -webkit-border-radius : 3px;
+    font-size : 10pt;
+}
+
+input.rescan {
+    font-size : 10pt;
+    background-color : red;
+    color : white;
+}
+
+input.basket {
+    font-size : 10pt;
+    background-color : maroon;
+    color : #FDE990;
+    border : #1B1E23 solid 0.1em;
+}
+
+input.basket:hover {
+    color : maroon;
+    background-color : #FDE990;
+}
+
+select {
+    color : maroon;
+    background-color : #FDE990;
+}
+
+input.button {
+    font-size : 10pt;
+    background-color : maroon;
+    color : #FDE990;
+    border : #1B1E23 solid 0.1em;
+}
+
+input.button:hover {
+    color : maroon;
+    background-color : #FDE990;
+}
+
+td.filter {
+    background-color : #1B1E23;
+}
+
+table.filter {
+    margin-left : auto; 
+    margin-right : auto;
+    background-color : #1B1E23;
+    font-size : 10pt;
+}
+
+table.filter td{
+    text-align : center;
+}
+
+b.green {
+    font-size : 10pt;
+    text-align : left;
+    color : green;
+}
+
+b.inverse {
+    font-size : 10pt;
+    text-align : left;
+    color : white;
+    background-color : black;
+}
+
+.website {
+    margin-left : 25%;
+    margin-right : 25%;
+}
+
+#introduction {
+    margin-left : 10%;
+    margin-right : 10%;
+}
+
+.report {
+    margin-left : 25%;
+    margin-right : 25%;
+}
+
+#key {
+    margin-left : 25%;
+    margin-right : 25%;
+}
+
+p.introduction, .report {
+    color : black;
+    text-align : left;
+}
+
+p.key {
+    color : black;
+    text-align : left;
+}
+
+h3.introduction {
+    text-align : left;
+}
+
+tr.superseded {
+    background-color : gray;
+}
+
+tr.zebra {
+  background-color : #E8ECDE;
+}
+
+#footer_container {
+    height : 48px;
+    width : 100%;
+    left : 0pt;
+    bottom : 0;
+    display : block;
+    position : fixed;
+}   
+
+#footer_contents {
+    height :48px;
+    width : 100%;
+    margin : auto;
+    text-align : center;
+    vertical-align : middle;
+    border-top : 1px dotted #AAAAAA;
+    font-size : 10pt;
+    color : #FDE990;
+    background-color : maroon;
+    background-image : url(/images/blue.jpg);
+    background-repeat: repeat;
+    background-attachment : scroll;
+    background-position : 0% 0%;
+}
