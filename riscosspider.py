@@ -45,7 +45,6 @@ class riscosspider:
     
         self.searchableAttributes = [
                                      ('Absolutes','absolutes'),
-                                     ('Application Date','application_date'),
                                      ('Application Directory','application_directory'),
                                      ('Application Name','application_name'),
                                      ('Application Version','application_version'),
@@ -55,6 +54,8 @@ class riscosspider:
                                      ('Categories','categories'),
                                      ('Computer','computer'),
                                      ('Copyright','copyright'),
+                                     ('Date','date'),
+                                     ('Dealer','dealer'),
                                      ('Description','description'),
                                      ('Developer','developer'),
                                      ('DTP Formats','dtp_formats'),
@@ -713,14 +714,7 @@ class riscosspider:
         elif selection == 10:
             print str(selection)+": Removing duplicate urls documents"
             self.remove_urls_duplicates()
-            
-            
-            
-        elif selection == 111111: # REVERT WHEN XML IMPLEMENTED!!!
-        
-        
-        
-        
+        elif selection == 11:
             print str(selection)+": Remove older web.archive.org urls entries where newer archived urls entries exist"
             try:
                 for document in self.urlsCollection.find({'domain':'web.archive.org'}):
@@ -837,6 +831,18 @@ class riscosspider:
         latestMessage = ""
         epoch = int(time.time())
 
+        # Correct any database keys whose name has been changed
+        changedAttributes = [('application_date','date')]
+        if changedAttributes:
+            for (oldAttribute,newAttribute) in changedAttributes:
+                for document in self.riscosCollection.find({oldAttribute:{'$exists':True}}):
+                    document[newAttribute] = document[oldAttribute]
+                    del document[oldAttribute]
+                    self.riscosCollection.save(document)
+                #endfor
+            #endfor
+        #endif
+        
         # Find a non-indexed document with a .zip-based URL
         doc_ids = self.urlsCollection.find({'zip_file':{'$ne':''},'last_scanned':0}).distinct('_id')
         if doc_ids:
@@ -1534,12 +1540,18 @@ class riscosspider:
     #enddef
     
     def process_riscos_xml_file(self, parent_url, xmlcode):
+        for riscosXmlDocument in self.riscosCollection.find({'parent_url':parent_url}):
+            print 'Removing riscos.xml entry for '+riscosXmlDocument['parent_url']+'...'
+            self.riscosCollection.remove({'_id':ObjectId(riscosXmlDocument['_id'])})
+        #endfor
         print 'Processing '+parent_url+'...'
         try:
             riscos = etree.XML(xmlcode)
             #print etree.tostring(riscos, pretty_print=True)
             for subelement in riscos.iter():
-                if subelement.tag.lower() == 'developers':
+                if subelement.tag.lower() == 'dealers':
+                    self.process_riscos_xml_dealers_element(parent_url, subelement)
+                elif subelement.tag.lower() == 'developers':
                     self.process_riscos_xml_developers_element(parent_url, subelement)
                 elif subelement.tag.lower() == 'events':
                     self.process_riscos_xml_events_element(parent_url, subelement)
@@ -1565,6 +1577,63 @@ class riscosspider:
             True
     #enddef
 
+    def process_riscos_xml_dealers_element(self, parent_url, dealersElement):
+        print 'Processing '+dealersElement.tag+'...'
+        for subelement in dealersElement.iter():
+            if subelement.tag.lower() == 'dealer':
+                self.process_riscos_xml_dealer_element(parent_url, subelement)
+            #endif
+        #endfor
+    #enddef   
+    
+    def process_riscos_xml_dealer_element(self, parent_url, dealerElement):
+        epoch = int(time.time())
+        dealer = ""
+        address = ""
+        description = ""
+        email = ""
+        telephone = ""
+        url = ""
+        print 'Processing '+dealerElement.tag+'...'
+        #xmlcode = etree.tostring(dealerElement)
+        #print xmlcode
+        for subelement in dealerElement.iter():
+            if subelement.tag.lower() == 'address':
+                address = subelement.text
+                print 'Address: '+address
+            elif subelement.tag.lower() == 'description':
+                description = subelement.text
+                print 'Description: '+description
+            elif subelement.tag.lower() == 'email':
+                email = subelement.text
+                print 'Email: '+email    
+            elif subelement.tag.lower() == 'name':
+                dealer = subelement.text
+                print 'Dealer: '+dealer
+            elif subelement.tag.lower() == 'telephone':
+                telephone = subelement.text
+                print 'Telephone: '+telephone
+            elif subelement.tag.lower() == 'url':
+                url = subelement.text
+                print 'URL: '+url
+            #endif
+        #endfor
+        if dealer and url:
+            newDocument = {}
+            newDocument['riscos_xml'] = parent_url
+            newDocument['url'] = url
+            newDocument['parent_url'] = parent_url
+            newDocument['dealer'] = dealer
+            newDocument['address'] = address
+            newDocument['description'] = description
+            newDocument['email'] = email
+            newDocument['telephone'] = telephone
+            newDocument['last_scanned'] = epoch
+            newDocument['next_scan'] = epoch + self.periodMonth
+            self.riscosCollection.insert(newDocument)
+        #endif
+    #enddef 
+    
     def process_riscos_xml_developers_element(self, parent_url, developersElement):
         print 'Processing '+developersElement.tag+'...'
         for subelement in developersElement.iter():
@@ -1617,7 +1686,7 @@ class riscosspider:
             newDocument['email'] = email
             newDocument['telephone'] = telephone
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef 
@@ -1667,7 +1736,7 @@ class riscosspider:
                 print 'URL: '+url
             #endif
         #endfor
-        if developer and url:
+        if event and url:
             newDocument = {}
             newDocument['riscos_xml'] = parent_url
             newDocument['url'] = url
@@ -1676,7 +1745,7 @@ class riscosspider:
             newDocument['event'] = event
             newDocument['description'] = description
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef     
@@ -1710,7 +1779,7 @@ class riscosspider:
                 print 'URL: '+url
             #endif
         #endfor
-        if developer and url:
+        if forum and url:
             newDocument = {}
             newDocument['riscos_xml'] = parent_url
             newDocument['url'] = url
@@ -1718,7 +1787,7 @@ class riscosspider:
             newDocument['forum'] = forum
             newDocument['description'] = description
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef     
@@ -1744,6 +1813,7 @@ class riscosspider:
     #enddef
 
     def process_riscos_xml_computer_element(self, parent_url, computerElement):
+        epoch = int(time.time())
         developer = ""
         description = ""
         computer = ""
@@ -1764,7 +1834,7 @@ class riscosspider:
                 print 'URL: '+url
             #endif
         #endfor
-        if absolute and url:
+        if computer and url:
             newDocument = {}
             newDocument['riscos_xml'] = parent_url
             newDocument['url'] = url
@@ -1773,7 +1843,7 @@ class riscosspider:
             newDocument['developer'] = developer
             newDocument['description'] = description
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef
@@ -1788,6 +1858,7 @@ class riscosspider:
     #enddef
 
     def process_riscos_xml_podule_element(self, parent_url, poduleElement):
+        epoch = int(time.time())
         developer = ""
         description = ""
         podule = ""
@@ -1808,7 +1879,7 @@ class riscosspider:
                 print 'URL: '+url
             #endif
         #endfor
-        if absolute and url:
+        if podule and url:
             newDocument = {}
             newDocument['riscos_xml'] = parent_url
             newDocument['url'] = url
@@ -1817,14 +1888,14 @@ class riscosspider:
             newDocument['developer'] = developer
             newDocument['description'] = description
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef    
     
     def process_riscos_xml_publications_element(self, parent_url, publicationsElement):
         print 'Processing '+publicationsElement.tag+'...'
-        for subelement in developersElement.iter():
+        for subelement in publicationsElement.iter():
             if subelement.tag.lower() == 'books':
                 self.process_riscos_xml_books_element(parent_url, subelement)
             elif subelement.tag.lower() == 'magazines':
@@ -1843,6 +1914,8 @@ class riscosspider:
     #enddef    
     
     def process_riscos_xml_book_element(self, parent_url, bookElement):
+        epoch = int(time.time())
+        newDocument = {}
         description = ""
         isbn = ""
         price = ""
@@ -1854,9 +1927,11 @@ class riscosspider:
             if subelement.tag.lower() == 'description':
                 description = subelement.text
                 print 'Description: '+description
+                newDocument['description'] = description
             elif subelement.tag.lower() == 'isbn':
                 isbn = subelement.text
                 print 'ISBN: '+isbn
+                newDocument['identifier'] = isbn
             elif subelement.tag.lower() == 'price':
                 currency = ""
                 for attr, value in subelement.items():
@@ -1866,29 +1941,26 @@ class riscosspider:
                 #endfor
                 price = subelement.text+currency
                 print 'Price: '+price
+                newDocument['price'] = price
             elif subelement.tag.lower() == 'publisher':
                 publisher = subelement.text
                 print 'Publisher: '+publisher
+                newDocument['publisher'] = publisher
             elif subelement.tag.lower() == 'title':
                 title = subelement.text
                 print 'Title: '+title
+                newDocument['book'] = title
             elif subelement.tag.lower() == 'url':
                 url = subelement.text
                 print 'URL: '+url
+                newDocument['url'] = url
             #endif
         #endfor
-        if absolute and url:
-            newDocument = {}
+        if newDocument:
             newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
             newDocument['parent_url'] = parent_url
-            newDocument['book'] = title
-            newDocument['identifier'] = isbn
-            newDocument['price'] = price
-            newDocument['publisher'] = publisher
-            newDocument['description'] = description
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef 
@@ -1903,6 +1975,7 @@ class riscosspider:
     #enddef
     
     def process_riscos_xml_magazine_element(self, parent_url, magazineElement):
+        epoch = int(time.time())
         description = ""
         issn = ""
         price = ""
@@ -1937,7 +2010,7 @@ class riscosspider:
                 print 'URL: '+url
             #endif
         #endfor
-        if absolute and url:
+        if title and url:
             newDocument = {}
             newDocument['riscos_xml'] = parent_url
             newDocument['url'] = url
@@ -1948,7 +2021,7 @@ class riscosspider:
             newDocument['publisher'] = publisher
             newDocument['description'] = description
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef 
@@ -2007,7 +2080,7 @@ class riscosspider:
             newDocument['email'] = email
             newDocument['telephone'] = telephone
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef 
@@ -2067,7 +2140,7 @@ class riscosspider:
             newDocument['parent_url'] = parent_url
             newDocument['absolutes'] = [absolute]
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef
@@ -2084,6 +2157,7 @@ class riscosspider:
     #enddef
 
     def process_riscos_xml_app_element(self, parent_url, softwareElement):
+        epoch = int(time.time())
         author = ""
         copyright = ""
         date = ""
@@ -2175,7 +2249,7 @@ class riscosspider:
             newDocument['description'] = description
             newDocument['license'] = license
             newDocument['maintainer'] = maintainer
-            newDocument['application_date'] = date
+            newDocument['date'] = date
             newDocument['application_directory'] = directory
             newDocument['price'] = price
             newDocument['developer'] = developer
@@ -2184,7 +2258,7 @@ class riscosspider:
             newDocument['url'] = url
             newDocument['parent_url'] = parent_url
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef
@@ -2221,7 +2295,7 @@ class riscosspider:
             newDocument['parent_url'] = parent_url
             newDocument['font'] = [font]
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef    
@@ -2274,7 +2348,7 @@ class riscosspider:
             #endif
             newDocument['relocatable_modules'] = [subDocument]
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef
@@ -2311,7 +2385,7 @@ class riscosspider:
             newDocument['parent_url'] = parent_url
             newDocument['monitor_definition_files'] = [monitor]
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef
@@ -2348,7 +2422,7 @@ class riscosspider:
             newDocument['parent_url'] = parent_url
             newDocument['printer_definition_files'] = [printer]
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef
@@ -2393,7 +2467,7 @@ class riscosspider:
                 newDocument['utilities'] = [{'name':utility}]
             #endif
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef    
@@ -2413,6 +2487,8 @@ class riscosspider:
         epoch = int(time.time())
         term = ""
         definition = ""
+        image_url = ""
+        image_caption = ""
         print 'Processing '+entryElement.tag+'...'
         #xmlcode = etree.tostring(entryElement)
         #print xmlcode
@@ -2423,6 +2499,14 @@ class riscosspider:
             elif subelement.tag.lower() == 'definition':
                 definition = subelement.text
                 print 'Definition: '+definition
+            elif subelement.tag.lower() == 'image':
+                for attr, value in subelement.items():
+                    if attr == 'caption':
+                        image_caption = value
+                    elif attr == 'url':
+                        image_url = value
+                    #endif
+                #endfor          
             #endif
         #endfor
         if term and definition:
@@ -2431,8 +2515,10 @@ class riscosspider:
             newDocument['parent_url'] = parent_url
             newDocument['glossary_term'] = term
             newDocument['glossary_definition'] = definition
+            newDocument['glossary_image_url'] = image_url
+            newDocument['glossary_image_caption'] = image_caption
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef
@@ -2478,7 +2564,7 @@ class riscosspider:
                 print 'URL: '+url
             #endif
         #endfor
-        if developer and url:
+        if usergroup:
             newDocument = {}
             newDocument['riscos_xml'] = parent_url
             newDocument['url'] = url
@@ -2489,7 +2575,7 @@ class riscosspider:
             newDocument['email'] = email
             newDocument['telephone'] = telephone
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef 
@@ -2523,7 +2609,7 @@ class riscosspider:
                 print 'URL: '+url
             #endif
         #endfor
-        if developer and url:
+        if video and url:
             newDocument = {}
             newDocument['riscos_xml'] = parent_url
             newDocument['url'] = url
@@ -2531,7 +2617,7 @@ class riscosspider:
             newDocument['video'] = video
             newDocument['description'] = description
             newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodYear
+            newDocument['next_scan'] = epoch + self.periodMonth
             self.riscosCollection.insert(newDocument)
         #endif
     #enddef
@@ -2655,7 +2741,7 @@ class riscosspider:
                     existingDocument['absolutes'] = absolutes
                 #endif
                 if appDate:
-                    existingDocument['application_date'] = appDate
+                    existingDocument['date'] = appDate
                 #endif
                 if appName and appName != 'ProgInfo':
                     existingDocument['application_name'] = appName
@@ -2764,7 +2850,7 @@ class riscosspider:
                     subDocument['absolutes'] = absolutes
                 #endif
                 if appDate:
-                    subDocument['application_date'] = appDate
+                    subDocument['date'] = appDate
                 #endif
                 if appDir:
                     subDocument['application_directory'] = appDir
