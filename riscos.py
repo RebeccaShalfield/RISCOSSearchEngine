@@ -70,7 +70,8 @@ class riscos:
                                     ('Application Name','application_name','app.png'),
                                     ('Application Directory','application_directory','app.png'),
                                     ('Application Version','application_version',''),
-                                    ('Application Date','application_date',''),
+                                    ('Dealer','dealer',''),
+                                    ('Date','date',''),
                                     ('Purpose','purpose',''),
                                     ('Description','description',''),                                   
                                     ('Filetypes Read','filetypes_read',''),
@@ -130,7 +131,6 @@ class riscos:
         
         self.searchableAttributes = [
                                      ('Absolutes','absolutes','The name of an ARM code file'),
-                                     ('Application Date','application_date','The date of an application'),
                                      ('Application Directory','application_directory','The name of a directory containing an application'),
                                      ('Application Name','application_name','The textual name of an application'),
                                      ('Application Version','application_version','The version of an application'),
@@ -140,6 +140,8 @@ class riscos:
                                      ('Categories','categories','The category to which an application has been assigned within a package'),
                                      ('Computer','computer','An ARM-powered computer capable of running RISC OS natively'),
                                      ('Copyright','copyright','An application\'s copyright message'),
+                                     ('Date','date','The date of an application'),
+                                     ('Dealer','dealer',"The name of a RISC OS dealer"),
                                      ('Description','description','The description of an application'),
                                      ('Developer','developer',"The name of a RISC OS hardware or software developer"),
                                      ('Domain','domain',"A web site's domain name"),
@@ -728,7 +730,7 @@ class riscos:
             content += '<form class="inline" action="/riscos/logon" method="post"><input class="button" type="submit" value="Logon"></form>'
         #endif
         content += '</th></tr>'
-        content += '<tr><th><h1 id="title"><sup>The</sup> RISC OS Search Engine<br><sup><i><form class="inline" action="/riscos/absolute" method="post"><input class="button" type="submit" value="Absolutes" title="Search for Absolutes"></form> <form class="inline" action="/riscos/app" method="post"><input class="button" type="submit" value="Apps" title="Search for Applications"></form> <form class="inline" action="/riscos/book" method="post"><input class="button" type="submit" value="Books" title="Search for Books"></form> <form class="inline" action="/riscos/computer" method="post"><input class="button" type="submit" value="Computers" title="Search for Computers"></form> <form class="inline" action="/riscos/event" method="post"><input class="button" type="submit" value="Events" title="Search for Events"></form> <form class="inline" action="/riscos/filetype" method="post"><input class="button" type="submit" value="Filetypes" title="Search for Filetypes"></form> <form class="inline" action="/riscos/font" method="post"><input class="button" type="submit" value="Fonts" title="Search for Fonts"></form> <form class="inline" action="/riscos/forum" method="post"><input class="button" type="submit" value="Forums" title="Search for Forum"></form> <form class="inline" action="/riscos/glossary" method="post"><input class="button" type="submit" value="Glossary" title="Search for Glossary Term"></form> <form class="inline" action="/riscos/magazine" method="post"><input class="button" type="submit" value="Magazines" title="Search for Magazines"></form> <form class="inline" action="/riscos/module" method="post"><input class="button" type="submit" value="Modules" title="Search for Relocatable Modules"></form> <form class="inline" action="/riscos/monitor" method="post"><input class="button" type="submit" value="Monitor DFs" title="Search for Monitor Definition Files"></form> <form class="inline" action="/riscos/podule" method="post"><input class="button" type="submit" value="Podules" title="Search for Podules"></form> <form class="inline" action="/riscos/printer" method="post"><input class="button" type="submit" value="Printer DFs" title="Search for Printer Definition Files"></form> <form class="inline" action="/riscos/service" method="post"><input class="button" type="submit" value="Services" title="Search for Services"></form> <form class="inline" action="/riscos/usergroup" method="post"><input class="button" type="submit" value="User Groups" title="Search for User Groups"></form> <form class="inline" action="/riscos/utility" method="post"><input class="button" type="submit" value="Utilities" title="Search for Utilities"></form> <form class="inline" action="/riscos/video" method="post"><input class="button" type="submit" value="Videos" title="Search for Videos"></form></i></sup></h1></th></tr>'
+        content += '<tr><th><h1 id="title"><sup>The</sup> RISC OS Search Engine<br><sup><i><form class="inline" action="/riscos/absolute" method="post"><input class="button" type="submit" value="Absolutes" title="Search for Absolutes"></form> <form class="inline" action="/riscos/app" method="post"><input class="button" type="submit" value="Apps" title="Search for Applications"></form> <form class="inline" action="/riscos/book" method="post"><input class="button" type="submit" value="Books" title="Search for Books"></form> <form class="inline" action="/riscos/computer" method="post"><input class="button" type="submit" value="Computers" title="Search for Computers"></form> <form class="inline" action="/riscos/dealer" method="post"><input class="button" type="submit" value="Dealers" title="Search for Dealers"></form> <form class="inline" action="/riscos/developer" method="post"><input class="button" type="submit" value="Developers" title="Search for Developers"></form> <form class="inline" action="/riscos/event" method="post"><input class="button" type="submit" value="Events" title="Search for Events"></form> <form class="inline" action="/riscos/filetype" method="post"><input class="button" type="submit" value="Filetypes" title="Search for Filetypes"></form> <form class="inline" action="/riscos/font" method="post"><input class="button" type="submit" value="Fonts" title="Search for Fonts"></form> <form class="inline" action="/riscos/forum" method="post"><input class="button" type="submit" value="Forums" title="Search for Forum"></form> <form class="inline" action="/riscos/glossary" method="post"><input class="button" type="submit" value="Glossary" title="Search for Glossary Term"></form> <form class="inline" action="/riscos/magazine" method="post"><input class="button" type="submit" value="Magazines" title="Search for Magazines"></form> <form class="inline" action="/riscos/module" method="post"><input class="button" type="submit" value="Modules" title="Search for Relocatable Modules"></form> <form class="inline" action="/riscos/monitor" method="post"><input class="button" type="submit" value="Monitor DFs" title="Search for Monitor Definition Files"></form> <form class="inline" action="/riscos/podule" method="post"><input class="button" type="submit" value="Podules" title="Search for Podules"></form> <form class="inline" action="/riscos/printer" method="post"><input class="button" type="submit" value="Printer DFs" title="Search for Printer Definition Files"></form> <form class="inline" action="/riscos/service" method="post"><input class="button" type="submit" value="Services" title="Search for Services"></form> <form class="inline" action="/riscos/usergroup" method="post"><input class="button" type="submit" value="User Groups" title="Search for User Groups"></form> <form class="inline" action="/riscos/utility" method="post"><input class="button" type="submit" value="Utilities" title="Search for Utilities"></form> <form class="inline" action="/riscos/video" method="post"><input class="button" type="submit" value="Videos" title="Search for Videos"></form></i></sup></h1></th></tr>'
         content += '<tr><td class="filter"><form class="inline" action="/riscos/filter" method="post">'
         content += '<table class="filter"><tr><td>RISC OS Version</td><td>Addressing Mode</td><td>ARM Architecture</td><td>Territory</td><td>Start Year</td><td>End Year</td><td>View</td><td>Web Sites</td></tr>'       
         content += '<tr><td><select name="riscosversion" title="Select your version of RISC OS noting that 5.xx is in one fork and 4.xx/6.xx in the other">'
@@ -798,7 +800,7 @@ class riscos:
         #endfor
         content += '</select></td><td><input type="hidden" name="origin" value="index"><input class="button" type="submit" value="Filter"></td></tr></table></form>'
         content += '</td></tr>'
-        content += '<tr><th><form class="inline" action="/riscos/introduction" method="post"><input class="button" type="submit" value="Introduction"></form> <form class="inline" action="/riscos/news" method="post"><input class="button" type="submit" value="News"></form> <form class="inline" action="/riscos/latestapps" method="post"><input class="button" type="submit" value="Latest Apps"></form> <form class="inline" action="/riscos/categorisation"><input class="button" type="submit" value="Categorisation"></form> <form class="inline" action="/riscos/index" method="post"><input class="button" type="submit" value="Simple Search" title="Allows you to enter a single search as either a string or a regular expression"></form> <form class="inline" action="/riscos/advanced" method="post"><input class="button" type="submit" value="Advanced Search" title="Allows you to enter multiple searches as regular expressions"></form> <form class="inline" action="/riscos/websites" method="post"><input class="button" type="submit" value="Web Sites"></form> <form class="inline" action="/riscos/ftpsites" method="post"><input class="button" type="submit" value="FTP Sites"></form> <form class="inline" action="/riscos/randomapp" method="post"><input class="button" type="submit" value="Random App" title="Displays details of a RISC OS application at random"></form> <form class="inline" action="/riscos/randomurl" method="post"><input class="button" type="submit" value="Random URL" title="Takes you to a URL at random directly related to a RISC OS application"></form> <form class="inline" action="/riscos/randomvideo" method="post"><input class="button" type="submit" value="Random Video" title="Takes you to a RISC OS-related video at random"></form> <form class="inline" action="/riscos/reports" method="post"><input class="button" type="submit" value="Reports"></form>'
+        content += '<tr><th><form class="inline" action="/riscos/introduction" method="post"><input class="button" type="submit" value="Introduction"></form> <form class="inline" action="/riscos/news" method="post"><input class="button" type="submit" value="News"></form> <form class="inline" action="/riscos/latestapps" method="post"><input class="button" type="submit" value="Latest Apps"></form> <form class="inline" action="/riscos/categorisation"><input class="button" type="submit" value="Categorisation"></form> <form class="inline" action="/riscos/index" method="post"><input class="button" type="submit" value="Generic Search" title="Allows you to enter a single search as either a string or a regular expression"></form> <form class="inline" action="/riscos/advanced" method="post"><input class="button" type="submit" value="Advanced Search" title="Allows you to enter multiple searches as regular expressions"></form> <form class="inline" action="/riscos/websites" method="post"><input class="button" type="submit" value="Web Sites"></form> <form class="inline" action="/riscos/ftpsites" method="post"><input class="button" type="submit" value="FTP Sites"></form> <form class="inline" action="/riscos/randomapp" method="post"><input class="button" type="submit" value="Random App" title="Displays details of a RISC OS application at random"></form> <form class="inline" action="/riscos/randomurl" method="post"><input class="button" type="submit" value="Random URL" title="Takes you to a URL at random directly related to a RISC OS application"></form> <form class="inline" action="/riscos/randomglossary" method="post"><input class="button" type="submit" value="Random Glossary" title="Displays a glossary term at random"></form> <form class="inline" action="/riscos/randomvideo" method="post"><input class="button" type="submit" value="Random Video" title="Takes you to a RISC OS-related video at random"></form> <form class="inline" action="/riscos/reports" method="post"><input class="button" type="submit" value="Reports"></form>'
         if userDocument and userDocument.has_key('basket') and userDocument['basket']:
             content += ' | <form class="inline" action="/riscos/view_basket" method="post">'
             if nested:
@@ -894,13 +896,43 @@ class riscos:
             doc_ids = self.riscosCollection.find({"application_directory":distinctApps[randomNo]}).distinct('_id')
             filteredDocIds = self.apply_filter(userDocument, doc_ids)
             if filteredDocIds:
-                content += '<h3>'+str(randomNo)+' of '+str(len(distinctApps))+'</h3>'
+                content += '<h3>'+str(randomNo+1)+' of '+str(len(distinctApps))+'</h3>'
                 if userDocument and userDocument.has_key('view') and userDocument['view'] and userDocument['view'] == 'table':
                     content += self.display_document_table(filteredDocIds, 'randomapp', False)
                 else:
                     content += self.display_document_report(filteredDocIds, 'randomapp', False)
                 #endif
                 appFound = True
+            #endif
+        #endwhile
+        content += self.footer()
+        return content
+    #enddef
+    
+    @cherrypy.expose
+    def randomglossary(self):
+        content = ""
+        status = self.cookie_handling()
+        content += self.header(status, 'index, nofollow')
+        userDocument = self.usersCollection.find_one({"session_id":self.sessionId})
+        content += '<h2>Random Glossary</h2>'     
+        distinctTerms = self.riscosCollection.find({"glossary_term":{"$exists":True,"$ne":""},"glossary_definition":{"$exists":True,"$ne":""}}).distinct("glossary_term")
+        termFound = False
+        while distinctTerms and not termFound:
+            randomNo = randint(0,len(distinctTerms)-1)
+            doc_ids = self.riscosCollection.find({"glossary_term":distinctTerms[randomNo]}).distinct('_id')
+            # Filtering on glossary terms currently has no effect
+            filteredDocIds = self.apply_filter(userDocument, doc_ids)
+            if filteredDocIds:
+                content += '<h3>'+str(randomNo+1)+' of '+str(len(distinctTerms))+'</h3>'
+                content += '<dl>'
+                for filteredDocId in filteredDocIds:
+                    document = self.riscosCollection.find_one({'_id':ObjectId(filteredDocId)})
+                    content += '<dt>'+document['glossary_term']+'</dt>'
+                    content += '<dd>'+document['glossary_definition']+'</dd>'
+                #endfor
+                content += '</dl>'
+                termFound = True
             #endif
         #endwhile
         content += self.footer()
@@ -924,7 +956,7 @@ class riscos:
                 if filteredDocIds:
                     document = self.riscosCollection.find_one({"_id":ObjectId(filteredDocIds[0])})
                     if document:
-                        content += '<h3>'+str(randomNo)+' of '+str(len(distinctVideos))+'</h3>'
+                        content += '<h3>'+str(randomNo+1)+' of '+str(len(distinctVideos))+'</h3>'
                         content += '<p>'+document['embed']+'<br><a href="'+document['url']+'" target="_blank" title="'+document['url']+'">'+document['page_title']+'</a>'+self.insert_last_modified_date(document)+'<br><b class="green">'+document['url']+self.insert_parent_hyperlink(document)+'</p>'
                         videoFound = True
                     #endif
@@ -953,7 +985,7 @@ class riscos:
                 if filteredDocIds:
                     selectedUrl = distinctUrls[randomNo]
                     distinctApps = self.riscosCollection.find({"application_directory":{"$exists":True,"$ne":""},"parent_url":selectedUrl}).distinct("application_directory")
-                    content += '<h3>'+str(randomNo)+' of '+str(len(distinctUrls))+'</h3>'
+                    content += '<h3>'+str(randomNo+1)+' of '+str(len(distinctUrls))+'</h3>'
                     urlFound = True
                 #endif
             #endwhile
@@ -1080,6 +1112,9 @@ class riscos:
         '''Allow a new URL to be added to the Database or an existing URL to be reset'''
         status = self.cookie_handling()
         if url:
+            if not url.__contains__('://'):
+                url = 'http://' + url
+            #endif
             count = self.urlsCollection.find({'url':url}).count()
             if not count:
                 newDocument = {}
@@ -1223,7 +1258,7 @@ class riscos:
             self.usersCollection.save(userDocument)
         #endif   
 
-        content += '<h2>Simple Search</h2>'
+        content += '<h2>Generic Search</h2>'
         
         content += '<p><form action="/riscos/index" method="post">'
         content += '<select name="format">'
@@ -2200,13 +2235,13 @@ class riscos:
     
     def insert_application_version_and_or_date(self,document):
         content = ""
-        if (document.has_key('application_version') and document['application_version']) or (document.has_key('application_date') and document['application_date']):
-            if document.has_key('application_version') and document['application_version'] and document.has_key('application_date') and document['application_date']:
-                content += ' '+document['application_version']+' ('+document['application_date']+')'
+        if (document.has_key('application_version') and document['application_version']) or (document.has_key('date') and document['date']):
+            if document.has_key('application_version') and document['application_version'] and document.has_key('date') and document['date']:
+                content += ' '+document['application_version']+' ('+document['date']+')'
             elif document.has_key('application_version') and document['application_version']:
                 content += ' '+document['application_version']
-            elif document.has_key('application_date') and document['application_date']:
-                content += ' ('+document['application_date']+')'
+            elif document.has_key('date') and document['date']:
+                content += ' ('+document['date']+')'
             #endif
         #endif
         return content
@@ -2230,6 +2265,9 @@ class riscos:
         content = ""
         port = ""
         content += self.header(status, 'noindex, follow')
+        
+        content += '<p>The source code to the RISC OS Search Engine project can be found on <a href="https://github.com/RebeccaShalfield/RISCOSSearchEngine">GitHub</a></p>'
+        
         for sourceCodeFile in ['riscos.py','riscosspider.py','riscossoftware.py']:
             ip = open(self.path+os.sep+sourceCodeFile)
             sourceCode = ip.read()
@@ -2272,7 +2310,7 @@ class riscos:
         if self.mongodbPort != 27017:
             port = ' --port '+str(self.mongodbPort)
         #endif
-        executable = r'"C:\Program Files\MongoDB\bin\mongoexport.exe" --verbose'+port+' --db riscos --collection riscos --csv -f application_name,application_directory,application_version,application_date,purpose,description,filetypes_read,filetypes_set,absolutes,utilities,relocatable_modules,relocatable_modules_dependant_upon,programming_languages,fonts,help,dtp_formats,minimum_riscos_versions,monitor_definition_files,printer_definition_files,star_commands,system_variables,territories,source,author,copyright,license,package_name,package_section,package_version,categories,maintainer,priority,page_title,url,parent_url,last_modified,last_scanned,next_scan --out '+self.path+os.sep+'downloads'+os.sep+'riscos.csv'
+        executable = r'"C:\Program Files\MongoDB\bin\mongoexport.exe" --verbose'+port+' --db riscos --collection riscos --csv -f application_name,application_directory,application_version,date,purpose,description,filetypes_read,filetypes_set,absolutes,utilities,relocatable_modules,relocatable_modules_dependant_upon,programming_languages,fonts,help,dtp_formats,minimum_riscos_versions,monitor_definition_files,printer_definition_files,star_commands,system_variables,territories,source,author,copyright,license,package_name,package_section,package_version,categories,maintainer,priority,page_title,url,parent_url,last_modified,last_scanned,next_scan --out '+self.path+os.sep+'downloads'+os.sep+'riscos.csv'
         (status,output) = self.getstatusoutput(executable)
         content += '<p><a href="/riscos/downloads/riscos.csv">Download Database in CSV Format</p>'
         content += '</div></body>'
@@ -2325,7 +2363,7 @@ class riscos:
             for month in ['Dec','Nov','Oct','Sep','Aug','Jul','Jun','May','Apr','Mar','Feb','Jan']:
                 for date in ['31','30','29','28','27','26','25','24','23','22','21','20','19','18','17','16','15','14','13','12','11','10','09','08','07','06','05','04','03','02','01']:
                     regex = re.compile(date+'[ -]'+month+'[ -]'+str(year))
-                    subset_doc_ids = self.riscosCollection.find({'application_date':regex}).distinct('_id')
+                    subset_doc_ids = self.riscosCollection.find({'date':regex}).distinct('_id')
                     for subset_doc_id in subset_doc_ids:
                         doc_ids.append(subset_doc_id)
                     #endfor
@@ -3359,6 +3397,176 @@ class riscos:
     #enddef 
     
     @cherrypy.expose
+    def dealer(self, format="string", search=""):
+        content = ""
+        status = self.cookie_handling()
+        content += self.header(status, 'index, nofollow')
+        userDocument = self.usersCollection.find_one({"session_id":self.sessionId})
+        epoch = int(time.time())
+
+        if userDocument:
+            if userDocument.has_key("last_visit") and userDocument["last_visit"]:
+                # Reset search if last visit was over 24 hours ago
+                if userDocument["last_visit"]+86400 <= epoch:
+                    userDocument['search_criteria'] = {}
+                    userDocument['key'] = ""
+                    userDocument['value'] = ""
+                    userDocument['basket'] = []
+                #endif
+            #endif
+            userDocument["last_visit"] = epoch
+            self.usersCollection.save(userDocument)
+        #endif
+
+        content += '<h2>Dealer Search</h2>'
+        
+        if not search:
+            distinctDealers = self.riscosCollection.find({"dealer":{"$exists":True,"$ne":""}}).distinct("dealer")
+            content += '<h3>We currently know about '+str(len(distinctDealers))+' distinct dealers!</h3>'
+        #endif
+        
+        content += '<p><form action="/riscos/dealer" method="post">'
+        content += '<select name="format">'
+        for potentialFormat in ['string','regex']:
+            if potentialFormat == format:
+                content += '<option value="'+potentialFormat+'" selected>'+potentialFormat.capitalize()+'</option>'
+            else:
+                content += '<option value="'+potentialFormat+'">'+potentialFormat.capitalize()+'</option>'
+            #endif
+        #endfor
+        content += '</select> '
+        if search:
+            content += '<input id="searchdealer" type="text" size="40" name="search" value="'+search+'">'
+        else:
+            content += '<input id="searchdealer" type="text" size="40" name="search">'
+        #endif
+        content += '<input class="button" type="submit" value="Search">'
+        content += '</form></p>'
+
+        if search:
+            if format == 'string':
+                search = re.escape(search)
+            #endif
+            doc_ids = []
+            attributesToSearch = ['dealer']
+            for attributeToSearch in attributesToSearch:
+                searchCriteria = {}
+                try:
+                    searchCriteria[attributeToSearch] = re.compile('(?i)'+search)
+                    doc_ids += self.riscosCollection.find(searchCriteria).distinct('_id')
+                    doc_ids = list(set(doc_ids))
+                except:
+                    content += "<h3 class=\"error\">Unlike Google, The RISC OS Search Engine uses Regular Expressions<br>Unfortunately, there is an error in `"+search+"`!"
+                    for charToBeEscaped in ['\\','(',')','$','.','+']:
+                        if charToBeEscaped in search and not '\\'+charToBeEscaped in search:
+                            content += "<br>Try escaping `"+charToBeEscaped+"` with `\\"+charToBeEscaped+"` as in `"+search.replace(charToBeEscaped,'\\'+charToBeEscaped)+"`"
+                        #endif
+                    #endfor
+                    content += "</h3>"
+                    content += self.regex_table()
+                    content += self.footer()
+                    return content
+                #endfor
+            #endif
+            
+            filteredDocIds = self.apply_filter(userDocument, doc_ids)
+
+            if userDocument and userDocument.has_key('view') and userDocument['view'] and userDocument['view'] == 'table':
+                content += self.display_document_table(filteredDocIds, 'index', False)
+            else:
+                content += self.display_document_report(filteredDocIds, 'index', False)
+            #endif
+        #endif
+        content += self.footer()
+        return content
+    #enddef 
+    
+    @cherrypy.expose
+    def developer(self, format="string", search=""):
+        content = ""
+        status = self.cookie_handling()
+        content += self.header(status, 'index, nofollow')
+        userDocument = self.usersCollection.find_one({"session_id":self.sessionId})
+        epoch = int(time.time())
+
+        if userDocument:
+            if userDocument.has_key("last_visit") and userDocument["last_visit"]:
+                # Reset search if last visit was over 24 hours ago
+                if userDocument["last_visit"]+86400 <= epoch:
+                    userDocument['search_criteria'] = {}
+                    userDocument['key'] = ""
+                    userDocument['value'] = ""
+                    userDocument['basket'] = []
+                #endif
+            #endif
+            userDocument["last_visit"] = epoch
+            self.usersCollection.save(userDocument)
+        #endif
+
+        content += '<h2>Developer Search</h2>'
+        
+        if not search:
+            distinctDevelopers = self.riscosCollection.find({"developer":{"$exists":True,"$ne":""}}).distinct("developer")
+            content += '<h3>We currently know about '+str(len(distinctDevelopers))+' distinct developers!</h3>'
+        #endif
+        
+        content += '<p><form action="/riscos/developer" method="post">'
+        content += '<select name="format">'
+        for potentialFormat in ['string','regex']:
+            if potentialFormat == format:
+                content += '<option value="'+potentialFormat+'" selected>'+potentialFormat.capitalize()+'</option>'
+            else:
+                content += '<option value="'+potentialFormat+'">'+potentialFormat.capitalize()+'</option>'
+            #endif
+        #endfor
+        content += '</select> '
+        if search:
+            content += '<input id="searchdeveloper" type="text" size="40" name="search" value="'+search+'">'
+        else:
+            content += '<input id="searchdeveloper" type="text" size="40" name="search">'
+        #endif
+        content += '<input class="button" type="submit" value="Search">'
+        content += '</form></p>'
+
+        if search:
+            if format == 'string':
+                search = re.escape(search)
+            #endif
+            doc_ids = []
+            attributesToSearch = ['developer']
+            for attributeToSearch in attributesToSearch:
+                searchCriteria = {}
+                try:
+                    searchCriteria[attributeToSearch] = re.compile('(?i)'+search)
+                    doc_ids += self.riscosCollection.find(searchCriteria).distinct('_id')
+                    doc_ids = list(set(doc_ids))
+                except:
+                    content += "<h3 class=\"error\">Unlike Google, The RISC OS Search Engine uses Regular Expressions<br>Unfortunately, there is an error in `"+search+"`!"
+                    for charToBeEscaped in ['\\','(',')','$','.','+']:
+                        if charToBeEscaped in search and not '\\'+charToBeEscaped in search:
+                            content += "<br>Try escaping `"+charToBeEscaped+"` with `\\"+charToBeEscaped+"` as in `"+search.replace(charToBeEscaped,'\\'+charToBeEscaped)+"`"
+                        #endif
+                    #endfor
+                    content += "</h3>"
+                    content += self.regex_table()
+                    content += self.footer()
+                    return content
+                #endfor
+            #endif
+            
+            filteredDocIds = self.apply_filter(userDocument, doc_ids)
+
+            if userDocument and userDocument.has_key('view') and userDocument['view'] and userDocument['view'] == 'table':
+                content += self.display_document_table(filteredDocIds, 'index', False)
+            else:
+                content += self.display_document_report(filteredDocIds, 'index', False)
+            #endif
+        #endif
+        content += self.footer()
+        return content
+    #enddef 
+    
+    @cherrypy.expose
     def forum(self, format="string", search=""):
         content = ""
         status = self.cookie_handling()
@@ -4266,7 +4474,7 @@ class riscos:
         content += '<h2>The riscos.xml Scheme</h2>'
         content += '<div id="introduction">'
         content += '<p class="introduction">The RISC OS Search Engine fully supports the riscos.xml scheme.</p>'
-        content += '<p class="introduction">Everyone in the RISC OS Community with a web site, be they a developer or simply an enthusiast, has the right to add a riscos.xml file to their very own web site.</p>'
+        content += '<p class="introduction">Everyone in the RISC OS Community with a web site, be they a developer, dealer or simply an enthusiast, has the right to add a riscos.xml file to their very own web site.</p>'
         
         content += '<p class="introduction">The location of the riscos.xml file on your web site can either be in the same directory as robots.txt or in the same directory as a RISC OS-related page we would normally index and, of course, you can have as many riscos.xml files on your web site as you wish:<br>'
         content += '<ul>'
@@ -4280,10 +4488,24 @@ class riscos:
         content += '</p>'
         
         content += '<p class="introduction">Whenever the RISC OS Search Engine comes across a riscos.xml file, either as a result of spidering or having its URL submitted to us, it will be parsed and its contents added to our database.</p>'
+        
+        content += '<p class="introduction">Although the RISC OS Search Engine will automatically rescan your riscos.xml file every month, its URL can be submitted to us at any time to provide more frequent updates.</p>'
+        
         content += '<p class="introduction">Although the overall structure of a riscos.xml file is quite complex, you only have to include those sections applicable for your needs:</p>'
         format = '''
 <?xml version="1.0" encoding="ISO-8859-1"?>
 <riscos>
+    <dealers>
+        <dealer>
+            <address>?</address>
+            <description>?</description>
+            <email>?</email>
+            <name>?</name>
+            <telephone>?</telephone>
+            <url>?</url>
+        </dealer>
+        ...
+    </dealers>
     <developers>
         <developer>
             <address>?</address>
@@ -4316,6 +4538,7 @@ class riscos:
         <entry>
             <term>?</term>
             <definition>?</definition>
+            <image url="?" caption="?" />
         </entry>
         ...
     </glossary>
@@ -4552,6 +4775,7 @@ class riscos:
                 ('Apps','application_directory','string','app.png',{'application_directory':{"$exists":True,"$nin":["",[]]}}),
                 ('ARC Files','arc_file','string','',{'arc_file':{"$exists":True,"$nin":["",[]]}}),
                 ('Authors','author','string','',{'author':{"$exists":True,"$nin":["",[]]}}),
+                ('Dealers','dealer','string','',{'dealer':{"$exists":True,"$nin":["",[]]}}),
                 ('Developers','developer','string','',{'developer':{"$exists":True,"$nin":["",[]]}}),
                 ('Filetypes','filetypes_read','list','',{'filetypes_read':{"$exists":True,"$nin":["",[]]}}),
                 ('Fonts','fonts','list','ff6.png',{'fonts':{"$exists":True,"$nin":["",[]]}}),
@@ -4916,6 +5140,74 @@ class riscos:
         content += ']'
         return content
     #enddef
+    
+    @cherrypy.expose
+    def search_dealer_autocomplete(self, term):
+        status = self.cookie_handling()
+        
+        print 'search_dealer_autocomplete'
+        print term
+        
+        matches = []      
+        for attribute in ['dealer']:
+            searchCriteria = {}
+            searchCriteria[attribute] = term  
+            document = self.riscosCollection.find_one(searchCriteria)
+            if document:
+                matches += document[attribute]
+            #endif
+        #endfor           
+        if not matches:
+            for attribute in ['dealer']:
+                searchCriteria = {}
+                searchCriteria[attribute] = re.compile('(?i)'+term)     
+                matches += self.riscosCollection.find(searchCriteria).limit(3).distinct(attribute)
+            #endfor
+        #endif
+        content = '['
+        for i in range(len(matches)):
+            content += '"'+matches[i].replace('"','\\"')+'"'
+            if i < len(matches)-1:
+                content += ','
+            #endif
+        #endfor
+        content += ']'
+        return content
+    #enddef
+    
+    @cherrypy.expose
+    def search_developer_autocomplete(self, term):
+        status = self.cookie_handling()
+        
+        print 'search_developer_autocomplete'
+        print term
+        
+        matches = []      
+        for attribute in ['developer']:
+            searchCriteria = {}
+            searchCriteria[attribute] = term  
+            document = self.riscosCollection.find_one(searchCriteria)
+            if document:
+                matches += document[attribute]
+            #endif
+        #endfor           
+        if not matches:
+            for attribute in ['developer']:
+                searchCriteria = {}
+                searchCriteria[attribute] = re.compile('(?i)'+term)     
+                matches += self.riscosCollection.find(searchCriteria).limit(3).distinct(attribute)
+            #endfor
+        #endif
+        content = '['
+        for i in range(len(matches)):
+            content += '"'+matches[i].replace('"','\\"')+'"'
+            if i < len(matches)-1:
+                content += ','
+            #endif
+        #endfor
+        content += ']'
+        return content
+    #enddef 
     
     @cherrypy.expose
     def search_forum_autocomplete(self, term):
@@ -5297,6 +5589,9 @@ conf = { '/'           : { 'tools.staticdir.root'      : current_dir },
                          },
          '/riscos.js' : { 'tools.staticfile.on'        : True,
                            'tools.staticfile.filename' : current_dir + os.sep + 'riscos.js'
+                         },
+         '/riscos.xml' : { 'tools.staticfile.on'        : True,
+                           'tools.staticfile.filename' : current_dir + os.sep + 'riscos.xml'
                          },
          '/softwareconfirmed'     : { 'tools.staticdir.on'      : True,
                            'tools.staticdir.dir'       : 'softwareconfirmed'
