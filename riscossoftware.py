@@ -27,24 +27,24 @@ class riscossoftware:
     
         self.searchableAttributes = [
                                      ('Absolutes','absolutes'),
-                                     ('Application Date','application_date'),
-                                     ('Application Directory','application_directory'),
                                      ('Application Name','application_name'),
                                      ('Application Version','application_version'),
                                      ('ARC File','arc_file'),
+                                     ('ARM Architectures','arm_architectures'),
                                      ('Author','author'),
                                      ('Categories','categories'),
                                      ('Copyright','copyright'),
+                                     ('Date','date'),
                                      ('Description','description'),
+                                     ('Directory','directory'),
                                      ('DTP Formats','dtp_formats'),
                                      ('Filetypes Read','filetypes_read'),
                                      ('Filetypes Set','filetypes_set'),
                                      ('Fonts','fonts'),
                                      ('Help','help'),
-                                     ('Last Modified','last_modified'),
-                                     ('License','license'),
+                                     ('Licence','licence'),
                                      ('Maintainer','maintainer'),
-                                     ('Minimum RISC OS Versions','minimum_riscos_versions'),
+                                     ('Module Dependencies','module_dependencies'),
                                      ('Monitor Definition Files','monitor_definition_files'),
                                      ('Package Name','package_name'),
                                      ('Package Section','package_section'),
@@ -55,8 +55,8 @@ class riscossoftware:
                                      ('Programming Languages','programming_languages'),
                                      ('Purpose','purpose'),
                                      ('Relocatable Modules','relocatable_modules'),
-                                     ('Relocatable Modules Dependant Upon','relocatable_modules_dependant_upon'),
-                                     ('* Commands','star_commands'),
+                                     ('RISC OS Versions','riscos_versions'),
+                                     ('* Command','star_command'),
                                      ('Source','source'),
                                      ('System Variables','system_variables'),
                                      ('Territories','territories'),
@@ -178,10 +178,10 @@ class riscossoftware:
     
     def update_apps(self, url, apps):
         epoch = int(time.time())
-        for [absolutes,appDate,appDir,appName,appVer,author,categories,copyright,description,dtpFormats,filetypesRead,filetypesSet,fonts,help,license,maintainer,minOsVers,monitorDefinitionFiles,packageName,packageSection,packageVersion,printerDefinitionFiles,priority,programmingLanguages,relocatableModules,relocatableModulesDependantUpon,source,territories,starCommands,systemVariables,toolboxRequired,utilities] in apps:
+        for [absolutes,appDate,appDir,appName,appVer,armArchitectures,author,categories,copyright,description,dtpFormats,filetypesRead,filetypesSet,fonts,help,licence,maintainer,monitorDefinitionFiles,packageName,packageSection,packageVersion,printerDefinitionFiles,priority,programmingLanguages,relocatableModules,relocatableModulesDependantUpon,riscOsVers,source,territories,systemVariables,toolboxRequired,utilities] in apps:
             existingDocument = ""
             if appDir:
-                existingDocument = self.riscosCollection.find_one({'url':url,'application_directory':appDir})
+                existingDocument = self.riscosCollection.find_one({'url':url,'directory':appDir})
             #endif
             if existingDocument:
                 if url.__contains__('/softwareconfirmed/'):
@@ -192,13 +192,16 @@ class riscossoftware:
                     existingDocument['absolutes'] = absolutes
                 #endif
                 if appDate:
-                    existingDocument['application_date'] = appDate
+                    existingDocument['date'] = appDate
                 #endif
                 if appName and appName != 'ProgInfo':
                     existingDocument['application_name'] = appName
                 #endif
                 if appVer:
                     existingDocument['application_version'] = appVer
+                #endif
+                if armArchitectures:
+                    existingDocument['arm_architectures'] = armArchitectures
                 #endif
                 if author:
                     existingDocument['author'] = author
@@ -230,14 +233,11 @@ class riscossoftware:
                     except:
                         True
                 #endif
-                if license:
-                    existingDocument['license'] = license
+                if licence:
+                    existingDocument['licence'] = licence
                 #endif
                 if maintainer:
                     existingDocument['maintainer'] = maintainer
-                #endif
-                if minOsVers:
-                    existingDocument['minimum_riscos_versions'] = minOsVers
                 #endif
                 if monitorDefinitionFiles:
                     existingDocument['monitor_definition_files'] = monitorDefinitionFiles
@@ -264,16 +264,16 @@ class riscossoftware:
                     existingDocument['relocatable_modules'] = relocatableModules
                 #endif
                 if relocatableModulesDependantUpon:
-                    existingDocument['relocatable_modules_dependant_upon'] = relocatableModulesDependantUpon
+                    existingDocument['module_dependencies'] = relocatableModulesDependantUpon
+                #endif
+                if riscOsVers:
+                    existingDocument['riscos_versions'] = riscOsVers
                 #endif
                 if source:
                     existingDocument['source'] = source
                 #endif          
                 if territories:
                     existingDocument['territories'] = list(set(territories))
-                #endif
-                if starCommands:
-                    existingDocument['star_commands'] = starCommands
                 #endif
                 if systemVariables:
                     existingDocument['system_variables'] = systemVariables
@@ -299,16 +299,19 @@ class riscossoftware:
                     subDocument['absolutes'] = absolutes
                 #endif
                 if appDate:
-                    subDocument['application_date'] = appDate
+                    subDocument['date'] = appDate
                 #endif
                 if appDir:
-                    subDocument['application_directory'] = appDir
+                    subDocument['directory'] = appDir
                 #endif
                 if appName and appName != 'ProgInfo':
                     subDocument['application_name'] = appName
                 #endif
                 if appVer:
                     subDocument['application_version'] = appVer
+                #endif
+                if armArchitectures:
+                    existingDocument['arm_architectures'] = armArchitectures
                 #endif
                 if author:
                     subDocument['author'] = author
@@ -340,14 +343,11 @@ class riscossoftware:
                     except:
                         True
                 #endif
-                if license:
-                    subDocument['license'] = license
+                if licence:
+                    subDocument['licence'] = licence
                 #endif
                 if maintainer:
                     subDocument['maintainer'] = maintainer
-                #endif
-                if minOsVers:
-                    subDocument['minimum_riscos_versions'] = minOsVers
                 #endif
                 if monitorDefinitionFiles:
                     subDocument['monitor_definition_files'] = monitorDefinitionFiles
@@ -374,17 +374,17 @@ class riscossoftware:
                     subDocument['relocatable_modules'] = relocatableModules
                 #endif
                 if relocatableModulesDependantUpon:
-                    subDocument['relocatable_modules_dependant_upon'] = relocatableModulesDependantUpon
+                    subDocument['module_dependencies'] = relocatableModulesDependantUpon
+                #endif
+                if riscOsVers:
+                    subDocument['riscos_versions'] = riscOsVers
                 #endif
                 if source:
                     subDocument['source'] = source
                 #endif          
                 if territories:
                     subDocument['territories'] = list(set(territories))
-                #endif
-                if starCommands:
-                    subDocument['star_commands'] = list(set(starCommands))
-                #endif          
+                #endif         
                 if systemVariables:
                     subDocument['system_variables'] = list(set(systemVariables))
                 #endif
@@ -427,6 +427,7 @@ class riscossoftware:
                         appDate = ""
                         appName = ""
                         appVer = ""
+                        armArchitectures = []
                         author = ""
                         categories = []
                         copyright = ""
@@ -436,9 +437,8 @@ class riscossoftware:
                         filetypesRead = []
                         fonts = []
                         help = ""
-                        license = ""
+                        licence = ""
                         maintainer = ""
-                        minOsVers = []
                         monitorDefinitionFiles = []
                         packageName = ""
                         packageSection = ""
@@ -448,9 +448,9 @@ class riscossoftware:
                         programmingLanguages = []
                         relocatableModules = []
                         relocatableModulesDependantUpon = []
+                        riscOsVers = []
                         source = ""
                         territories = []
-                        starCommands = []
                         systemVariables = []
                         toolboxRequired = ""
                         utilities = []           
@@ -766,6 +766,12 @@ class riscossoftware:
                                                     appDate = appDate[:7]+'20'+appDate[7:]
                                                 #endif
                                             #endif
+                                            year = int(appDate[7:])
+                                            if appDate[3:6] in self.months:
+                                                month = self.months.index(appDate[3:6])+1
+                                            #endif
+                                            day = int(appDate[:2])
+                                            appDate = int(time.mktime((year,month,day,0,0,0,0,0,0)))
                                         #endif
                                     #endif
                                 #endif
@@ -783,7 +789,7 @@ class riscossoftware:
 
                                     results = self.licencePattern.findall(contents)
                                     if results != []:
-                                        license = results[0]
+                                        licence = results[0]
                                     #endif
                                 except:
                                     True
@@ -824,6 +830,12 @@ class riscossoftware:
                                                     appDate = appDate[:7]+'20'+appDate[7:]
                                                 #endif
                                             #endif
+                                            year = int(appDate[7:])
+                                            if appDate[3:6] in self.months:
+                                                month = self.months.index(appDate[3:6])+1
+                                            #endif
+                                            day = int(appDate[:2])
+                                            appDate = int(time.mktime((year,month,day,0,0,0,0,0,0)))
                                         #endif
                                     #endif
                                 #endif
@@ -843,31 +855,31 @@ class riscossoftware:
                                 results = self.minOsVerPattern.findall(contents)
                                 if results != []:
                                     if '3.70' in results:
-                                        minOsVers.append(3.70)
+                                        riscOsVers.append(3.70)
                                     elif '3.60' in results:
-                                        minOsVers.append(3.60)
+                                        riscOsVers.append(3.60)
                                     elif '3.50' in results:
-                                        minOsVers.append(3.50)
+                                        riscOsVers.append(3.50)
                                     elif '3.11' in results:
-                                        minOsVers.append(3.11)
+                                        riscOsVers.append(3.11)
                                     elif '3.10' in results:
-                                        minOsVers.append(3.10)
+                                        riscOsVers.append(3.10)
                                     elif '3.00' in results or '3.0' in results:
-                                        minOsVers.append(3.00)
+                                        riscOsVers.append(3.00)
                                     elif '2.00' in results:
-                                        minOsVers.append(2.00)
+                                        riscOsVers.append(2.00)
                                     #endif
                                     
                                     if '6.20' in results:
-                                        minOsVers.append(6.20)
+                                        riscOsVers.append(6.20)
                                     elif '6.00' in results:
-                                        minOsVers.append(6.00)
+                                        riscOsVers.append(6.00)
                                     elif '4.00' in results:
-                                        minOsVers.append(4.00)
+                                        riscOsVers.append(4.00)
                                     #endif
                     
                                     if '5.00' in results:
-                                        minOsVers.append(5.00)
+                                        riscOsVers.append(5.00)
                                     #endif
                                 #endif
 
@@ -908,7 +920,20 @@ class riscossoftware:
                                 #endif
                             #endif
                         #endfor
-                        for component in [absolutes,appDate,appDir,appName,appVer,author,categories,copyright,description,dtpFormats,filetypesRead,filetypesSet,fonts,help,license,maintainer,minOsVers,monitorDefinitionFiles,packageName,packageSection,packageVersion,printerDefinitionFiles,priority,programmingLanguages,relocatableModules,relocatableModulesDependantUpon,source,territories,starCommands,systemVariables,toolboxRequired,utilities]:
+                        
+                        if riscOsVers and not armArchitectures:
+                            for riscOsVer in riscOsVers:
+                                if riscOsVer in ['3.70','3.71']:
+                                    armArchitectures.append('ARMv4')
+                                elif riscOsVer in ['3.50','3.60']:
+                                    armArchitectures.append('ARMv3')
+                                elif riscOsVer in ['2.00','3.0','3.00','3.10','3.11']: 
+                                    armArchitectures.append('ARMv2')
+                                #endif                            
+                            #endfor
+                        #endif
+                        
+                        for component in [absolutes,appDate,appDir,appName,appVer,armArchitectures,author,categories,copyright,description,dtpFormats,filetypesRead,filetypesSet,fonts,help,licence,maintainer,monitorDefinitionFiles,packageName,packageSection,packageVersion,printerDefinitionFiles,priority,programmingLanguages,relocatableModules,relocatableModulesDependantUpon,riscOsVers,source,territories,systemVariables,toolboxRequired,utilities]:
                             app.append(component)
                         #endfor
                         apps.append(app)
