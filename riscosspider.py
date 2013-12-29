@@ -38,21 +38,28 @@ class riscosspider:
         # Connect to 'reserves' collection
         self.reservesCollection = db['reserves']
     
+        # Connect to 'quarantine' collection
+        self.quarantineCollection = db['quarantine']    
+    
         self.housekeepingTasksLastRan = []
+    
+        self.months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     
         self.mirror = 'www.shalfield.com/riscos'
         self.mirrors = ['84.92.157.78/riscos','www.shalfield.com/riscos','192.168.88.1:8081/riscos']
     
         self.searchableAttributes = [
                                      ('Absolutes','absolutes'),
-                                     ('Application Directory','application_directory'),
+                                     ('Directory','directory'),
                                      ('Application Name','application_name'),
                                      ('Application Version','application_version'),
                                      ('ARC File','arc_file'),
-                                     ('Author','author'),
+                                     ('ARM Architectures','arm_architectures'),
+                                     ('Authors','authors'),
                                      ('Book','book'),
                                      ('Categories','categories'),
                                      ('Computer','computer'),
+                                     ('Contact','contact'),
                                      ('Copyright','copyright'),
                                      ('Date','date'),
                                      ('Dealer','dealer'),
@@ -60,19 +67,20 @@ class riscosspider:
                                      ('Developer','developer'),
                                      ('DTP Formats','dtp_formats'),
                                      ('Event','event',),
-                                     ('Filetypes Read','filetypes_read'),
+                                     ('FAQ','question'),
+                                     ('Filetypes Run','filetypes_run'),
                                      ('Filetypes Set','filetypes_set'),
                                      ('Fonts','fonts'),
                                      ('Forum','forum'),
                                      ('Glossary Term','glossary_term'),
                                      ('Glossary Definition','glossary_definition'),
                                      ('Help','help'),
+                                     ('How-To','howto'),
                                      ('Identifier','identifier'),
-                                     ('Last Modified','last_modified'),
-                                     ('License','license'),
+                                     ('licence','licence'),
                                      ('Magazine','magazine'),
                                      ('Maintainer','maintainer'),
-                                     ('Minimum RISC OS Versions','minimum_riscos_versions'),
+                                     ('Module Dependencies','module_dependencies'),
                                      ('Monitor Definition Files','monitor_definition_files'),
                                      ('Package Name','package_name'),
                                      ('Package Section','package_section'),
@@ -80,43 +88,37 @@ class riscosspider:
                                      ('Page Title','page_title'),
                                      ('Podule','podule'),
                                      ('Portable Document Format File','pdf_file'),
-                                     ('Price','price'),
+                                     ('Pricing','pricing'),
                                      ('Printer Definition Files','printer_definition_files'),
                                      ('Priority','priority'),
                                      ('Programming Languages','programming_languages'),
+                                     ('Project','project'),
                                      ('Provider','provider'),
                                      ('Publisher','publisher'),
                                      ('Purpose','purpose'),
                                      ('Relocatable Modules','relocatable_modules'),
-                                     ('Relocatable Modules Dependant Upon','relocatable_modules_dependant_upon'),
-                                     ('RSS Feed','rss_feed'),
-                                     ('RSS Feed Item Date','rss_feed_item_date'),
-                                     ('RSS Feed Item Description','rss_feed_item_description'),
-                                     ('RSS Feed Item Link','rss_feed_item_link'),
-                                     ('RSS Feed Item Title','rss_feed_item_title'),
-                                     ('* Commands','star_commands'),
+                                     ('RISC OS Versions','riscos_versions'),
+                                     ('* Command','star_command'),
                                      ('Source','source'),
                                      ('Spark File','spark_file'),
+                                     ('Syndicated Feed','syndicated_feed'),
+                                     ('Syndicated Feed Item Description','syndicated_feed_item_description'),
+                                     ('Syndicated Feed Item Title','syndicated_feed_item_title'),
                                      ('System Variables','system_variables'),
                                      ('Territories','territories'),
                                      ('User Group','user_group'),
                                      ('Utilities','utilities'),
-                                     #('Video','video'),
+                                     ('Video','video'),
                                      ('ZIP File','zip_file')
                                      ]
         
         if self.riscosCollection.find({}).count() == 0 and self.urlsCollection.find({}).count() == 0:
-            document = {}
-            document['last_scanned'] = 0
-            epoch = int(time.time())
-            document['next_scan'] = epoch
-            document['seed'] = True
             for url in ['http://www.riscosopen.org/']:
-                document['url'] = url
-                self.urlsCollection.insert(document)
-                print "Inserting into urls: "+document['url']
+                self.insert_url_into_urls(url, "", 0, epoch, False, False, True)
             #endfor
         #endif       
+        
+        self.trusted_domains = {}
         
         self.periodDay = 86400
         self.periodWeek = 604800
@@ -179,12 +181,13 @@ class riscosspider:
         self.archivedDatePattern = re.compile('http://web\.archive\.org/web/(\d{14})/http://.*$')
         self.youTubeEmbedPattern = re.compile('''<textarea class="yt-uix-form-input-textarea share-embed-code" onkeydown="if \(\(event.ctrlKey \|\| event.metaKey\) &amp;&amp; event.keyCode == 67\) \{ yt.tracking.track\('embedCodeCopied'\); }">(.+?)</textarea>''')
 
-        self.blacklist = ['edit.yahoo.com',
-                          'validator.w3.org'
-                         ]
+        self.blacklisted_domains = {}
+        self.blacklisted_domains['edit.yahoo.com'] = ''
+        self.blacklisted_domains['validator.w3.org'] = ''
         
         self.suspension = ['yahooshopping.pgpartner.com',
-                           'shopping.yahoo.com'
+                           'shopping.yahoo.com',
+                           'www.riscosopen.org/viewer/view/'
                           ]
         
         self.usualDomains = ['forum.acorn.de',
@@ -223,13 +226,19 @@ class riscosspider:
     #enddef    
 
     def continuous(self):
+        epoch = int(time.time())
         print "Spidering has started..."
+        syndicatedFeedTimer = 0
         while True:
             hour = time.localtime()[3]
             if (hour >= 6 and hour <= 22):
                 print "Performing housekeeping..."
                 self.housekeeping()
-            #endif           
+            #endif
+            if syndicatedFeedTimer == 0 or syndicatedFeedTimer+self.periodDay < epoch:
+                self.read_syndicated_feeds()
+                syndicatedFeedTimer = epoch
+            #endif            
             print "Spidering is running..."
             latestMessage = self.spider()
             print latestMessage            
@@ -237,6 +246,30 @@ class riscosspider:
         print "Spidering has finished!"
     #enddef
 
+    def read_syndicated_feeds(self):
+        for collection in [self.riscosCollection,self.urlsCollection]:
+            syndicatedFeeds = collection.find({'syndicated_feed':{'$exists':True,'$ne':['']}}).distinct('syndicated_feed')
+            for syndicatedFeed in syndicatedFeeds:
+                req = urllib2.Request(syndicatedFeed)
+                req.add_unredirected_header('User-Agent', 'RISC OS Search Engine http://'+self.mirror)
+                try:
+                    urlp = urllib2.urlopen(req)
+                    data = urlp.read()
+                    urlp.close()
+                    for document in collection.find({'syndicated_feed':syndicatedFeed}):
+                        collection.remove({'_id':ObjectId(document['_id'])})
+                    #endfor
+                    if re.search('</rss>',data):
+                        self.analyse_rss_feed(syndicatedFeed, data)
+                    elif re.search('</feed>',data):
+                        self.analyse_atom_feed(syndicatedFeed, data)
+                    #endif
+                except:
+                    True
+            #endfor
+        #endfor
+    #enddef
+    
     def normalise_url(self, url):
         pattern = re.compile('(/[^/\.]+/\.\.)')
         while url.__contains__('/..'):
@@ -254,13 +287,13 @@ class riscosspider:
         url = document['url']
         try:
             (scheme,netloc,path,query,fragment) = urlparse.urlsplit(url)
-            if netloc in self.blacklist:
+            if self.blacklisted_domains.has_key(netloc):
                 for blacklistedDocument in self.urlsCollection.find({'domain':netloc,'_id':{'$ne':ObjectId(document['_id'])}}):
                     print 'Removing Blacklisted URL '+blacklistedDocument['url']+'...'
                     self.urlsCollection.remove({'_id':ObjectId(blacklistedDocument['_id'])})
                 #endfor
                 return True
-            elif netloc+'/'+path in self.blacklist:
+            elif self.blacklisted_domains.has_key(netloc+'/'+path):
                 searchCriteria = {}
                 searchCriteria['url'] = re.compile(netloc+'/'+path)
                 searchCriteria['_id'] = {'$ne':ObjectId(document['_id'])}
@@ -281,7 +314,7 @@ class riscosspider:
     def blacklisted_url(self, url):
         try:
             (scheme,netloc,path,query,fragment) = urlparse.urlsplit(url)
-            if netloc in self.blacklist or netloc+'/'+path in self.blacklist:
+            if self.blacklisted_domains.has_key(netloc) or self.blacklisted_domains.has_key(netloc+'/'+path):
                 return True
             else:
                 return False
@@ -405,11 +438,9 @@ class riscosspider:
     def remove_urls_duplicates(self):
         try:
             for document in self.urlsCollection.find({'url':{'$ne':''}}):
-                count = self.urlsCollection.find({'url':document['url']}).count()
-                if count > 1:
+                if self.urlsCollection.find({'url':document['url']}).count() > 1:
                     print "Removing duplicate from urls: "+document['url']
                     self.urlsCollection.remove({'_id':ObjectId(document['_id'])})
-                    break
                 #endif
             #endfor
         except:
@@ -417,11 +448,11 @@ class riscosspider:
     #enddef 
     
     def identify_superseded_applications(self):
-        for document in self.riscosCollection.find({'application_directory':{'$ne':''},'application_version':{'$ne':''}}):
+        for document in self.riscosCollection.find({'directory':{'$ne':''},'application_version':{'$ne':''}}):
             try:
                 selectedVersion = float(document['application_version'])
                 highestVersion = selectedVersion
-                otherVersions = self.riscosCollection.find({'application_directory':document['application_directory'],'application_version':{'$ne':['',document['application_version']]}}).distinct('application_version')
+                otherVersions = self.riscosCollection.find({'directory':document['directory'],'application_version':{'$ne':['',document['application_version']]}}).distinct('application_version')
                 for otherVersion in otherVersions:
                     try:
                         if float(otherVersion) > highestVersion:
@@ -431,7 +462,7 @@ class riscosspider:
                         True
                 #endfor
                 if highestVersion > selectedVersion:
-                    for otherDocument in self.riscosCollection.find({'application_directory':document['application_directory'],'application_version':str(highestVersion)}):
+                    for otherDocument in self.riscosCollection.find({'directory':document['directory'],'application_version':str(highestVersion)}):
                         if float(otherDocument['application_version']) > float(document['application_version']):
                             document['superseded_by'] = otherDocument['_id']
                             self.riscosCollection.save(document)
@@ -456,8 +487,16 @@ class riscosspider:
         #endfor
     #enddef
     
+    def url_in_a_collection(self, url):
+        if self.url_in_riscos(url) or self.url_in_urls(url) or self.url_in_rejects(url) or self.url_in_quarantine(url) or self.url_in_reserves(url):
+            return True
+        else:
+            return False
+        #endif
+    #enddef
+    
     def url_in_riscos(self, url):
-        if self.riscosCollection.find({'url':url}).count():
+        if self.riscosCollection.find({'url':url,'syndicated_feed':{'$exists':False}}).count():
             return True
         else:
             return False
@@ -480,6 +519,14 @@ class riscosspider:
         #endif
     #enddef
     
+    def url_in_quarantine(self, url):
+        if self.quarantineCollection.find({'url':url}).count():
+            return True
+        else:
+            return False
+        #endif
+    #enddef
+    
     def url_in_reserves(self, url):
         if self.reservesCollection.find({'url':url}).count():
             return True
@@ -489,7 +536,7 @@ class riscosspider:
     #enddef
     
     def housekeeping(self):
-        noOfTasks = 16
+        noOfTasks = 18
         if not self.housekeepingTasksLastRan:
             for i in range(noOfTasks):
                 self.housekeepingTasksLastRan.append(0)
@@ -511,18 +558,8 @@ class riscosspider:
                 ip.close()
                 if lines:
                     for line in lines:
-                        if not self.url_in_riscos(line) and not self.url_in_urls(line) and not self.url_in_rejects(line) and not self.url_in_reserves(line) and not self.suspended_url(line) and not self.blacklisted_url(line):
-                            newDocument = {}
-                            newDocument['url'] = line
-                            if line.lower().endswith('.zip') or line.lower().__contains__('.zip?'):
-                                newDocument['zip_file'] = line
-                                newDocument['last_scanned'] = 0
-                            else:
-                                newDocument['last_scanned'] = 1
-                            #endif
-                            newDocument['next_scan'] = epoch
-                            self.urlsCollection.insert(newDocument)
-                            print "Inserting into urls: "+newDocument['url']
+                        if not self.url_in_a_collection(line) and not self.suspended_url(line) and not self.blacklisted_url(line):
+                            self.insert_url_into_urls(line, "", 0, epoch, False, False, False)
                         #endif
                     #endfor
                     op = open(path+os.sep+'BatchUrlFeed.txt','w')
@@ -562,8 +599,12 @@ class riscosspider:
                         print "Removing from riscos: "+document['url']
                         self.riscosCollection.remove({'_id':ObjectId(document['_id'])})
                     #endtryexcept 
+                elif document.has_key('riscos_xml') and document['riscos_xml']:
+                    continue
+                elif document.has_key('syndicated_feed') and document['syndicated_feed']:
+                    continue
                 else:
-                    print "Removing from riscos: "+document['url']
+                    print "Removing document with no url from riscos"
                     self.riscosCollection.remove({'_id':ObjectId(document['_id'])})
                 #endif
             #endfor
@@ -628,49 +669,41 @@ class riscosspider:
                     True
             #endif
         elif selection == 6:
-            print str(selection)+": Move documents older than a year from riscos collection to urls collection"
-            try:
-                total = self.riscosCollection.find({'url':{'$ne':['']},'last_scanned':{'$lt':epoch-self.periodYear}}).count()
-                counter = 0
-                for document in self.riscosCollection.find({'url':{'$ne':['']},'last_scanned':{'$lt':epoch-self.periodYear}}):
-                    if document['url'].startswith('/'):
-                        print 'Ignoring '+document['url']
-                    else:
-                        counter += 1
-                        normalisedUrl = self.normalise_url(document['url'])
-                        if not self.url_in_urls(normalisedUrl):
-                            movedDocument = {}
-                            movedDocument['url'] = normalisedUrl
-                            if document.has_key('parent_url') and document['parent_url']:
-                                movedDocument['parent_url'] = document['parent_url']
+            urlsCount = self.urlsCollection.find({}).count()
+            riscosCount = self.riscosCollection.find({}).count()
+            if urlsCount < riscosCount:
+                print str(selection)+": Move documents older than a year from riscos collection to urls collection"
+                try:
+                    total = self.riscosCollection.find({'url':{'$ne':['']},'last_scanned':{'$lt':epoch-self.periodYear}}).count()
+                    counter = 0
+                    for document in self.riscosCollection.find({'url':{'$ne':['']},'last_scanned':{'$lt':epoch-self.periodYear}}):
+                        if document['url'].startswith('/'):
+                            print 'Ignoring '+document['url']
+                        else:
+                            counter += 1
+                            normalisedUrl = self.normalise_url(document['url'])
+                            if not self.url_in_urls(normalisedUrl):
+                                print str(counter)+' of '+str(total)+' : Moving from riscos to urls: '+movedDocument['url']
+                                parent_url = ""
+                                syndicated_feed = False
+                                if document.has_key('parent_url') and document['parent_url']:
+                                    parent_url = document['parent_url']
+                                #endif
+                                if document.has_key('syndicated_feed') and document['syndicated_feed']:
+                                    syndicated_feed = True
+                                #endif
+                                self.insert_url_into_urls(normalisedUrl, parent_url, 0, 0, syndicated_feed, False, False)
                             #endif
-                            if document.has_key('rss_feed') and document['rss_feed']:
-                                movedDocument['rss_feed'] = document['rss_feed']
+                            print "Removing from riscos: "+document['url']
+                            self.riscosCollection.remove({'_id':ObjectId(document['_id'])})
+                            if counter >= 32:
+                                break
                             #endif
-                            print str(counter)+' of '+str(total)+' : Moving from riscos to urls: '+movedDocument['url']
-                            if normalisedUrl.lower().endswith('.zip') or normalisedUrl.lower().__contains__('.zip?'):
-                                movedDocument['zip_file'] = normalisedUrl
-                                movedDocument['last_scanned'] = 0
-                            else:
-                                movedDocument['last_scanned'] = document['last_scanned']
-                            #endif
-                            if document.has_key('next_scan') and document['next_scan']:
-                                movedDocument['next_scan'] = document['next_scan']
-                            else:
-                                movedDocument['next_scan'] = epoch
-                            #endif
-                            self.urlsCollection.insert(movedDocument)
-                            print "Inserting into urls: "+movedDocument['url']
                         #endif
-                        print "Removing from riscos: "+document['url']
-                        self.riscosCollection.remove({'_id':ObjectId(document['_id'])})
-                        if counter >= 32:
-                            break
-                        #endif
-                    #endif
-                #endfor
-            except:
-                True
+                    #endfor
+                except:
+                    True
+            #endif
         elif selection == 7:
             print str(selection)+": Identify software-specific documents"
             for document in self.urlsCollection.find({'url':{'$ne':''}}):
@@ -696,15 +729,13 @@ class riscosspider:
         elif selection == 8:
             print str(selection)+": Remove all documents with invalid hyperlink filetypes"
             for collection in [self.urlsCollection,self.riscosCollection]:
-                for document in collection.find({'url':{'$ne':''}}):
-                    if not self.valid_hyperlink_filetype(document['url']):
-                        rejectDocument = {}
-                        rejectDocument['url'] = document['url']
-                        rejectDocument['last_scanned'] = epoch
-                        self.rejectsCollection.insert(rejectDocument)          
-                        print 'Inserting into rejects: '+document['url']
-                        print "Removing: "+document['url']
-                        collection.remove({'_id':ObjectId(document['_id'])})
+                for document in collection.find({'url':{'$exists':True,'$ne':''}}):
+                    if document.has_key('url') and document['url']:
+                        if not self.valid_hyperlink_filetype(document['url']):
+                            self.insert_url_into_rejects(document['url'])
+                            print "Removing: "+document['url']
+                            collection.remove({'_id':ObjectId(document['_id'])})
+                        #endif
                     #endif
                 #endfor
             #endfor
@@ -761,6 +792,19 @@ class riscosspider:
             print str(selection)+": Synchronise with other mirrors"
             self.synchronise_mirrors()
         elif selection == 15:
+            print str(selection)+": Identify riscos.xml and .zip files"
+            for document in self.urlsCollection.find({'url':{'$ne':['']}}):
+                if document.has_key('url') and document['url']:
+                    if document['url'].endswith('/riscos.xml'):
+                        document['riscos_xml'] = document['url']
+                        self.urlsCollection.save(document)
+                    elif document['url'].lower().endswith('.zip') or document['url'].lower().__contains__('.zip?'):
+                        document['zip_file'] = document['url']
+                        self.urlsCollection.save(document)
+                    #endif
+                #endif
+            #endfor
+        elif selection == 16:
             print str(selection)+": Move documents whose next_scan value is lower than epoch"
             try:
                 total = self.riscosCollection.find({'url':{'$ne':['']},'next_scan':{'$lt':epoch}}).count()
@@ -770,30 +814,24 @@ class riscosspider:
                         print 'Ignoring '+document['url']
                     else:
                         counter += 1
-                        normalisedUrl = self.normalise_url(document['url'])
+                        if (document.has_key('riscos_xml') and document['riscos_xml']) or (document.has_key('syndicated_feed') and document['syndicated_feed']):
+                            normalisedUrl = self.normalise_url(document['parent_url'])
+                        else:
+                            normalisedUrl = self.normalise_url(document['url'])
+                        #endif
                         if not self.url_in_urls(normalisedUrl):
-                            movedDocument = {}
-                            movedDocument['url'] = normalisedUrl
-                            if document.has_key('parent_url') and document['parent_url']:
-                                movedDocument['parent_url'] = document['parent_url']
+                            print str(counter)+' of '+str(total)+' : Moving from riscos to urls: '+normalisedUrl
+                            parent_url = ""
+                            syndicated_feed = False
+                            riscos_xml = False
+                            if document.has_key('riscos_xml') and document['riscos_xml']:
+                                riscos_xml = True                               
+                            elif document.has_key('syndicated_feed') and document['syndicated_feed']:
+                                syndicated_feed = True
+                            elif document.has_key('parent_url') and document['parent_url']:
+                                parent_url = document['parent_url']                           
                             #endif
-                            if document.has_key('rss_feed') and document['rss_feed']:
-                                movedDocument['rss_feed'] = document['rss_feed']
-                            #endif
-                            print str(counter)+' of '+str(total)+' : Moving from riscos to urls: '+movedDocument['url']
-                            if normalisedUrl.lower().endswith('.zip') or normalisedUrl.lower().__contains__('.zip?'):
-                                movedDocument['zip_file'] = normalisedUrl
-                                movedDocument['last_scanned'] = 0
-                            else:
-                                movedDocument['last_scanned'] = document['last_scanned']
-                            #endif
-                            if document.has_key('next_scan') and document['next_scan']:
-                                movedDocument['next_scan'] = document['next_scan']
-                            else:
-                                movedDocument['next_scan'] = epoch
-                            #endif
-                            self.urlsCollection.insert(movedDocument)
-                            print "Inserting into urls: "+movedDocument['url']
+                            self.insert_url_into_urls(normalisedUrl, parent_url, 0, 0, syndicated_feed, riscos_xml, False)
                         #endif
                         print "Removing from riscos: "+document['url']
                         self.riscosCollection.remove({'_id':ObjectId(document['_id'])})
@@ -804,9 +842,44 @@ class riscosspider:
                 #endfor
             except:
                 True
+        elif selection == 17:
+            print str(selection)+": Backup MongoDB database"
+            localTime = time.localtime(int(time.time()))
+            year = str(localTime[0])
+            month = str(localTime[1])
+            if len(month) == 1:
+                month = '0'+month
+            #endif
+            day = str(localTime[2])
+            if len(day) == 1:
+                day = '0'+day
+            #endif
+            if not os.path.exists(self.path+os.sep+'dbdump'+os.sep+year+month+day):
+                os.mkdir(self.path+os.sep+'dbdump'+os.sep+year+month+day)
+                port = ""
+                if self.mongodbPort != 27017:
+                    port = ' --port '+str(self.mongodbPort)
+                #endif
+                executable = r'"C:\Program Files\MongoDB\bin\mongodump.exe" --verbose'+port+' --db riscos --out '+self.path+os.sep+'dbdump'+os.sep+year+month+day
+                (status,output) = self.getstatusoutput(executable)
+            #endif                
         #endif
         self.housekeepingTasksLastRan[selection] = int(time.time())
     #enddef
+    
+    def getstatusoutput(self,cmd):
+        """Return (status, output) of executing cmd in a shell."""
+        mswindows = (sys.platform == "win32")
+        if not mswindows:
+            cmd = '{ ' + cmd + '; }'
+        #endif
+        pipe = os.popen(cmd + ' 2>&1', 'r')
+        text = pipe.read()
+        sts = pipe.close()
+        if sts is None: sts = 0
+        if text[-1:] == '\n': text = text[:-1]
+        return sts, text
+    #enddef 
     
     def synchronise_mirrors(self):
         for mirror in self.mirrors:
@@ -828,11 +901,12 @@ class riscosspider:
         document = ""
         url = ""
         data = ""
+        lastModified = ""
         latestMessage = ""
         epoch = int(time.time())
-
-        # Correct any database keys whose name has been changed
-        changedAttributes = [('application_date','date')]
+        
+        # Update any database keys whose name has been altered
+        changedAttributes = [('syndicated_feed_item_date','date')]
         if changedAttributes:
             for (oldAttribute,newAttribute) in changedAttributes:
                 for document in self.riscosCollection.find({oldAttribute:{'$exists':True}}):
@@ -843,15 +917,27 @@ class riscosspider:
             #endfor
         #endif
         
-        # Find a non-indexed document with a .zip-based URL
-        doc_ids = self.urlsCollection.find({'zip_file':{'$ne':''},'last_scanned':0}).distinct('_id')
-        if doc_ids:
-            counter = 0
-            while not url and counter < len(doc_ids):
-                counter += 1
-                document = self.urlsCollection.find_one({'_id':ObjectId(doc_ids[randint(0,len(doc_ids)-1)])})
-                if document:
+        # Attempt to find a riscos.xml file
+        if not url:
+            doc_ids = self.urlsCollection.find({'riscos_xml':{'$exists':True}}).distinct('_id')
+            if doc_ids:
+                counter = 0
+                while not url and counter < len(doc_ids):
+                    counter += 1
+                    document = self.urlsCollection.find_one({'_id':ObjectId(doc_ids[randint(0,len(doc_ids)-1)])})
                     if document.has_key('url') and document['url']:
+                        url = document['url']
+                        print "Processing [3] "+url+'...'
+                    #endif
+                #endwhile
+            #endif
+        #endif         
+        
+        # Find a non-indexed document with a .zip-based URL
+        if not url:
+            for document in self.urlsCollection.find({'zip_file':{'$exists':True}}):
+                if document.has_key('url') and document['url']:
+                    if not document.has_key('last_scanned') or (document.has_key('last_scanned') and document['last_scanned'] < epoch-self.periodWeek):
                         if (document['url'].lower().endswith('.zip') or document['url'].lower().__contains__('.zip?')):
                             if document['url'].startswith('/'):
                                 self.urlsCollection.remove({'_id':ObjectId(document['_id'])})
@@ -870,9 +956,9 @@ class riscosspider:
                         #endif
                     #endif
                 #endif
-            #endwhile
+            #endfor
         #endif
-
+        
         # Find an urgent non-.zip non-indexed document
         if not url:
             doc_ids = self.urlsCollection.find({'last_scanned':0}).distinct('_id')
@@ -887,27 +973,11 @@ class riscosspider:
                     #endif
                 #endwhile
             #endif
-        #endif
-
-        # Attempt to find a riscos.xml file
-        if not url:
-            doc_ids = self.urlsCollection.find({'riscos_xml':{'$exists':True}}).distinct('_id')
-            if doc_ids:
-                counter = 0
-                while not url and counter < len(doc_ids):
-                    counter += 1
-                    document = self.urlsCollection.find_one({'_id':ObjectId(doc_ids[randint(0,len(doc_ids)-1)])})
-                    if document.has_key('url') and document['url']:
-                        url = document['url']
-                        print "Processing [3] "+url+'...'
-                    #endif
-                #endwhile
-            #endif
-        #endif        
+        #endif       
         
-        # Attempt to find an RSS feed directly
+        # Attempt to find a syndicated feed directly
         if not url:
-            doc_ids = self.urlsCollection.find({'rss_feed':{'$exists':True}}).distinct('_id')
+            doc_ids = self.urlsCollection.find({'syndicated_feed':{'$exists':True}}).distinct('_id')
             if doc_ids:
                 counter = 0
                 while not url and counter < len(doc_ids):
@@ -921,17 +991,17 @@ class riscosspider:
             #endif
         #endif
         
-        # Attempt to find an RSS feed indirectly
+        # Attempt to find a syndicated feed indirectly
         if not url:
             searchCriteria = {}
-            searchCriteria['url'] = re.compile('(?i)\.(?:rss|xml)$')
+            searchCriteria['url'] = re.compile('(?i)(?:atom|rss|xml|feeds?)')
             for document in self.urlsCollection.find(searchCriteria):
-                if document['url'].lower.endswith('.rss') or document['url'].lower.endswith('.xml'):
+                if document.has_key('url') and document['url']:
                     url = document['url']
                     print "Processing [5] "+url+'...'
                 #endif
             #endfor
-        #endif 
+        #endif
         
         # Attempt to find an ftp site
         if not url:
@@ -945,6 +1015,20 @@ class riscosspider:
             #endfor
         #endif 
 
+        # Attempt to find a possible syndicated feed indirectly
+        if not url:
+            searchCriteria = {}
+            searchCriteria['url'] = re.compile('(?i)(?:atom|rss)')
+            for document in self.urlsCollection.find(searchCriteria):
+                if document.has_key('url') and document['url']:
+                    if document['url'].lower().__contains__('atom') or document['url'].lower().__contains__('rss'):
+                        url = document['url']
+                        print "Processing [7] "+url+'...'
+                    #endif
+                #endif
+            #endfor
+        #endif        
+        
         # Attempt to find a document whose next_scan is lower than epoch
         if not url:
             doc_ids = self.urlsCollection.find({'url':{'$ne':['']},'next_scan':{'$lt':epoch}}).distinct('_id')
@@ -954,7 +1038,7 @@ class riscosspider:
                     counter += 1
                     document = self.urlsCollection.find_one({'_id':ObjectId(doc_ids[randint(0,len(doc_ids)-1)])})
                     url = document['url']
-                    print "Processing [7] "+url+'...'
+                    print "Processing [8] "+url+'...'
                 #endwhile
             #endif
         #endif        
@@ -976,7 +1060,7 @@ class riscosspider:
                         counter += 1
                         document = self.urlsCollection.find_one({'_id':ObjectId(doc_ids[randint(0,len(doc_ids)-1)])})
                         url = document['url']
-                        print "Processing [8] "+url+'...'
+                        print "Processing [9] "+url+'...'
                     #endwhile
                 #endif
             #endif
@@ -991,7 +1075,7 @@ class riscosspider:
                     counter += 1
                     document = self.urlsCollection.find_one({'_id':ObjectId(doc_ids[randint(0,len(doc_ids)-1)])})
                     url = document['url']
-                    print "Processing [9] "+url+'...'
+                    print "Processing [10] "+url+'...'
                 #endwhile
             #endif
         #endif
@@ -1005,12 +1089,8 @@ class riscosspider:
         try:
             (scheme,netloc,path,query,fragment) = urlparse.urlsplit(url)
         except ValueError:
-            # Possibly due to a IPv6 URL
-            rejectDocument = {}
-            rejectDocument['url'] = url
-            rejectDocument['last_scanned'] = epoch
-            self.rejectsCollection.insert(rejectDocument)
-            print "Inserting into rejects: "+rejectDocument['url']
+            # Possibly due to a IPv6 URL           
+            self.insert_url_into_rejects(url)
             self.urlsCollection.remove({'url':url})
             print 'Removing from urls: '+url
             latestMessage = 'A possible IPv6 url at '+url+', so duly removed!'
@@ -1019,6 +1099,14 @@ class riscosspider:
 
         document['url'] = url
         
+        if not scheme or not netloc:
+            self.insert_url_into_rejects(document['url'])
+            self.urlsCollection.remove({'url':document['url']})
+            print 'Removing from urls: '+document['url']
+            latestMessage = 'Incomplete URL, so duly removed'
+            return latestMessage
+        #endif        
+
         if self.blacklisted_document(document):
             print "Removing blacklisted url: "+document['url']
             latestMessage = "Removing blacklisted url: "+document['url']
@@ -1039,9 +1127,8 @@ class riscosspider:
         #endif         
         
         self.urlsCollection.save(document)
-
+        
         try:
-            (scheme,netloc,path,query,fragment) = urlparse.urlsplit(url)
             req = urllib2.Request(scheme+'://'+netloc+'/robots.txt')
             req.add_unredirected_header('User-Agent', 'RISC OS Search Engine http://www.shalfield.com/riscos')
             urlp = urllib2.urlopen(req)
@@ -1057,11 +1144,7 @@ class riscosspider:
                 #endif
             #endfor
             if disallowed:
-                rejectDocument = {}
-                rejectDocument['url'] = url
-                rejectDocument['last_scanned'] = epoch
-                self.rejectsCollection.insert(rejectDocument)
-                print "Inserting into rejects: "+rejectDocument['url']
+                self.insert_url_into_rejects(document['url'])
                 self.urlsCollection.remove({'url':url})
                 print 'Removing from urls: '+url          
                 latestMessage = 'Disallowed access to <a href="'+url+'">'+url+'</a> due to robots.txt!'
@@ -1072,11 +1155,7 @@ class riscosspider:
                             try:
                                 (altScheme,altNetloc,altPath,altQuery,altFragment) = urlparse.urlsplit(document['url'])
                                 if altPath == path and altNetloc == netloc and  altScheme == scheme:
-                                    rejectDocument = {}
-                                    rejectDocument['url'] = document['url']
-                                    rejectDocument['last_scanned'] = epoch
-                                    self.rejectsCollection.insert(rejectDocument)
-                                    print "Inserting into rejects: "+rejectDocument['url']
+                                    self.insert_url_into_rejects(document['url'])
                                     self.urlsCollection.remove({'url':document['url']})
                                     print 'Removing from urls: '+document['url']
                                 #endif
@@ -1096,7 +1175,9 @@ class riscosspider:
         except urllib2.URLError:
             True
         except socket.timeout:
-            True    
+            True
+        except socket.error:
+            True
 
         try:
             print "Attempting to connect to "+url
@@ -1111,6 +1192,8 @@ class riscosspider:
             print 'Successfully read '+url
             print "Data length is "+str(len(data))
         except socket.timeout:
+            document['next_scan'] = epoch + self.periodWeek
+            self.urlsCollection.save(document)
             latestMessage = 'We have suffered a socket timeout whilst trying to reach <a href="'+url+'">'+url+'</a> so will try again later!'
             return latestMessage
         except SSLError:
@@ -1120,25 +1203,19 @@ class riscosspider:
                 return latestMessage
             else:
                 if self.lastSuccessfulInternetConnection >= epoch-60:
-                    rejectDocument = {}
-                    rejectDocument['url'] = url
-                    rejectDocument['last_scanned'] = epoch
-                    self.rejectsCollection.insert(rejectDocument)
-                    print "Inserting into rejects: "+rejectDocument['url']
+                    self.insert_url_into_rejects(document['url'])
                     self.urlsCollection.remove({'url':url})
                     print 'Removing from urls: '+url
                     latestMessage = 'URL <a href="'+url+'">'+url+'</a> is unreachable so it has now been removed!'
                 else:
                     if document.has_key('strikes'):
-                        if document['strikes'] == 2 and self.lastSuccessfulInternetConnection >= epoch-60:
-                            rejectDocument = {}
-                            rejectDocument['url'] = url
-                            rejectDocument['last_scanned'] = epoch
-                            self.rejectsCollection.insert(rejectDocument)
-                            print "Inserting into rejects: "+rejectDocument['url']
+                        if document['strikes'] >= 2:
+                            #if self.lastSuccessfulInternetConnection >= epoch-60:
+                            self.insert_url_into_rejects(url)
                             self.urlsCollection.remove({'url':url})
                             print 'Removing from urls: '+url
                             latestMessage = 'Three strikes raised against <a href="'+url+'">'+url+'</a> so it has now been removed!'
+                            ##endif
                         else:
                             document['strikes'] += 1
                             document['last_scanned'] = epoch
@@ -1158,11 +1235,7 @@ class riscosspider:
             #endif       
         except HTTPError, error:
             if error.code >= 400 and error.code <= 499:
-                rejectDocument = {}
-                rejectDocument['url'] = url
-                rejectDocument['last_scanned'] = epoch
-                self.rejectsCollection.insert(rejectDocument)
-                print "Inserting into rejects: "+rejectDocument['url']
+                self.insert_url_into_rejects(url)
                 self.urlsCollection.remove({'url':url})
                 print 'Removing from urls: '+url
                 if hasattr(error, 'reason'):
@@ -1174,11 +1247,15 @@ class riscosspider:
             #endif
         except ValueError:
             if self.lastSuccessfulInternetConnection >= epoch-60:
-                rejectDocument = {}
-                rejectDocument['url'] = url
-                rejectDocument['last_scanned'] = epoch
-                self.rejectsCollection.insert(rejectDocument)
-                print "Inserting into rejects: "+rejectDocument['url']
+                self.insert_url_into_rejects(url)
+                self.urlsCollection.remove({'url':url})
+                print 'Removing from urls: '+url
+                latestMessage = 'Bad url, '+url+', so duly removed!'
+                return latestMessage
+            #endif
+        except socket.error:
+            if self.lastSuccessfulInternetConnection >= epoch-60:
+                self.insert_url_into_rejects(url)
                 self.urlsCollection.remove({'url':url})
                 print 'Removing from urls: '+url
                 latestMessage = 'Bad url, '+url+', so duly removed!'
@@ -1186,11 +1263,7 @@ class riscosspider:
             #endif
         except httplib.InvalidURL:
             if self.lastSuccessfulInternetConnection >= epoch-60:
-                rejectDocument = {}
-                rejectDocument['url'] = url
-                rejectDocument['last_scanned'] = epoch
-                self.rejectsCollection.insert(rejectDocument)
-                print "Inserting into rejects: "+rejectDocument['url']
+                self.insert_url_into_rejects(url)
                 self.urlsCollection.remove({'url':url})
                 print 'Removing from urls: '+url
                 latestMessage = 'Bad url, '+url+', so duly removed!'
@@ -1202,27 +1275,21 @@ class riscosspider:
                 return latestMessage
             else:
                 if self.lastSuccessfulInternetConnection >= epoch-60:
-                    rejectDocument = {}
-                    rejectDocument['url'] = url
-                    rejectDocument['last_scanned'] = epoch
-                    self.rejectsCollection.insert(rejectDocument)
-                    print "Inserting into rejects: "+rejectDocument['url']
+                    self.insert_url_into_rejects(url)
                     self.urlsCollection.remove({'url':url})
                     print 'Removing from urls: '+url
                     latestMessage = 'URL <a href="'+url+'">'+url+'</a> is unreachable so it has now been removed!'
                     return latestMessage
                 else:
                     if document.has_key('strikes'):
-                        if document['strikes'] == 2 and self.lastSuccessfulInternetConnection >= epoch-60:
-                            rejectDocument = {}
-                            rejectDocument['url'] = url
-                            rejectDocument['last_scanned'] = epoch
-                            self.rejectsCollection.insert(rejectDocument)
-                            print "Inserting into rejects: "+rejectDocument['url']
+                        if document['strikes'] >= 2:
+                            #if self.lastSuccessfulInternetConnection >= epoch-60:
+                            self.insert_url_into_rejects(url)
                             self.urlsCollection.remove({'url':url})
                             print 'Removing from urls: '+url
                             latestMessage = 'Three strikes raised against <a href="'+url+'">'+url+'</a> so it has now been removed!'
                             return latestMessage
+                            ##endif
                         else:
                             document['strikes'] += 1
                             document['last_scanned'] = epoch
@@ -1244,11 +1311,7 @@ class riscosspider:
         #endtryexcept
             
         if len(data) == 0:
-            rejectDocument = {}
-            rejectDocument['url'] = url
-            rejectDocument['last_scanned'] = epoch
-            self.rejectsCollection.insert(rejectDocument)
-            print "Inserting into rejects: "+rejectDocument['url']        
+            self.insert_url_into_rejects(url)        
             self.urlsCollection.remove({'url':url})
             print 'Removing from urls: '+url
             latestMessage = 'Although <a href="'+url+'">'+url+'</a> was successfully read, no data was returned'
@@ -1256,15 +1319,16 @@ class riscosspider:
         else:
             metaRobotsResults = self.metaRobotsPattern.findall(data)
             if metaRobotsResults and metaRobotsResults[0].__contains__('noindex'):
-                rejectDocument = {}
-                rejectDocument['url'] = url
-                rejectDocument['last_scanned'] = epoch
-                self.rejectsCollection.insert(rejectDocument)
-                print "Inserting into rejects: "+rejectDocument['url']        
+                self.insert_url_into_rejects(url)        
                 self.urlsCollection.remove({'url':url})
                 print 'Removing from urls: '+url
                 latestMessage = 'Although <a href="'+url+'">'+url+'</a> was successfully read, indexing is disallowed'
                 return latestMessage
+            #endif
+        
+            if urlp.headers.has_key('last-modified') and urlp.headers['last-modified']:
+                rawLastModified = urlp.headers['last-modified']
+                lastModified = int(time.mktime(time.strptime(rawLastModified[5:25],"%d %b %Y %H:%M:%S")))
             #endif
         
             if url.lower().endswith('.arc'):
@@ -1274,6 +1338,9 @@ class riscosspider:
                 newDocument['arc_file'] = url
                 newDocument['last_scanned'] = epoch
                 newDocument['next_scan'] = epoch + self.periodYear
+                if newDocument.has_key('strike'):
+                    del newDocument['strike']
+                #endif
                 self.riscosCollection.insert(newDocument)
                 print "Inserting into riscos: "+newDocument['url']
                 self.urlsCollection.remove({'url':url})
@@ -1287,6 +1354,9 @@ class riscosspider:
                 newDocument['spark_file'] = url
                 newDocument['last_scanned'] = epoch
                 newDocument['next_scan'] = epoch + self.periodYear
+                if newDocument.has_key('strike'):
+                    del newDocument['strike']
+                #endif                
                 self.riscosCollection.insert(newDocument)
                 print "Inserting into riscos: "+newDocument['url']
                 self.urlsCollection.remove({'url':url})
@@ -1300,48 +1370,56 @@ class riscosspider:
                 newDocument['pdf_file'] = url
                 newDocument['last_scanned'] = epoch
                 newDocument['next_scan'] = epoch + self.periodYear
+                if newDocument.has_key('strike'):
+                    del newDocument['strike']
+                #endif
                 self.riscosCollection.insert(newDocument)
                 print "Inserting into riscos: "+newDocument['url']
                 self.urlsCollection.remove({'url':url})
                 print 'Removing from urls: '+url
                 latestMessage = 'Found <a href="'+url+'">'+url+'</a>, a Portable Document Format file'
                 return latestMessage
-            elif url.lower().endswith('/riscos.xml'):
+            elif url.lower().endswith('/riscos.xml') and re.search('</riscos>',data):
                 print 'Processing '+url+' as riscos.xml file...'
-                self.process_riscos_xml_file(url, data)
+                self.process_riscos_xml_file(url, data, lastModified)
                 self.urlsCollection.remove({'url':url})
                 print 'Removing from urls: '+url
                 latestMessage = 'Found <a href="'+url+'">'+url+'</a>, a riscos.xml file'
                 return latestMessage
-            elif url.lower().endswith('.rss') or url.lower().endswith('.xml') or re.search('<rss(.*?)</rss>',data):
+            elif url.lower().endswith('.rss') or re.search('</rss>',data):
                 print 'Analysing '+url+' as RSS feed...'
                 self.analyse_rss_feed(url, data)
                 self.urlsCollection.remove({'url':url})
                 print 'Removing from urls: '+url
                 latestMessage = 'Found <a href="'+url+'">'+url+'</a>, an RSS Feed'
                 return latestMessage
+            elif url.lower().endswith('.atom') or re.search('</feed>',data):
+                print 'Analysing '+url+' as Atom feed...'
+                self.analyse_atom_feed(url, data)
+                self.urlsCollection.remove({'url':url})
+                print 'Removing from urls: '+url
+                latestMessage = 'Found <a href="'+url+'">'+url+'</a>, an Atom Feed'
+                return latestMessage
             elif url.lower().endswith('.zip') or url.lower().__contains__('.zip?'):
                 print 'Analysing '+url+' as ZIP file...'
                 try:
-                    apps = self.analyse_zip_file(data)
-                    self.update_apps(url,document,apps)
+                    apps, latestMessage = self.analyse_zip_file(url, data)
                     self.urlsCollection.remove({'url':url})
                     print 'Removing from urls: '+url
-                    latestMessage = 'Indexing <a href="'+url+'">'+url+'</a>'
+                    if apps:
+                        self.update_apps(url,document,apps)
+                        latestMessage = 'Indexing <a href="'+url+'">'+url+'</a>'
+                    else:
+                        latestMessage = 'No applications to index within <a href="'+url+'">'+url+'</a>'
+                        self.insert_url_into_rejects(url)
+                    #endif
                     return latestMessage
                 except zipfile.BadZipfile:
-                    newDocument = {}
-                    newDocument['url'] = url
-                    newDocument['zip_file'] = url
-                    newDocument['error'] = 'Bad Zip File'
-                    newDocument['last_scanned'] = epoch
-                    newDocument['next_scan'] = epoch + self.periodYear
-                    self.riscosCollection.insert(newDocument)
                     self.urlsCollection.remove({'url':url})
                     print 'Removing from urls: '+url
                     latestMessage = 'Bad zipfile encountered at <a href="'+url+'">'+url+'</a>'
-                    return latestMessage                    
-            elif self.page_riscos_related(data):
+                    return latestMessage               
+            elif self.content_riscos_related(data):
                 print 'Analysing '+url+' as something RISC OS related...'
                 baseUrl = ""
                 results = self.baseUrlPattern.findall(data)
@@ -1359,6 +1437,9 @@ class riscosspider:
                                 newDocument['page_title'] = results[0]
                                 newDocument['last_scanned'] = epoch
                                 newDocument['next_scan'] = epoch + self.periodYear
+                                if newDocument.has_key('strike'):
+                                    del newDocument['strike']
+                                #endif
                                 self.riscosCollection.insert(newDocument)
                                 print "Inserting into riscos: "+newDocument['url']
                             #endif
@@ -1367,12 +1448,11 @@ class riscosspider:
                     #endif
                 #endif
                 
-                if urlp.headers.has_key('last-modified') and urlp.headers['last-modified']:
-                    rawLastModified = urlp.headers['last-modified']
+                if lastModified:
                     try:
                         document['last_scanned'] = epoch
-                        document['next_scan'] = epoch + self.periodYear
-                        document['last_modified'] = int(time.mktime(time.strptime(rawLastModified[5:25],"%d %b %Y %H:%M:%S")))
+                        document['next_scan'] = self.calculate_next_scan_time(lastModified, epoch)
+                        document['date'] = lastModified
                         self.riscosCollection.save(document)
                     except:
                         True
@@ -1413,13 +1493,8 @@ class riscosspider:
                             result = urlparse.urlunsplit((urlComponents.scheme,urlComponents.netloc,urlComponents.path,'',''))
                         #endif
                         if self.valid_hyperlink_filetype(result) and not result.startswith('../'):
-                            if not self.url_in_riscos(result) and not self.url_in_urls(result) and not self.url_in_rejects(result) and not self.url_in_reserves(result) and not self.suspended_url(result) and not self.blacklisted_url(result):
-                                subDocument = {}
-                                subDocument['url'] = result
-                                subDocument['parent_url'] = url
-                                subDocument['last_scanned'] = 1                             
-                                self.urlsCollection.insert(subDocument)
-                                print "Inserting into urls: "+subDocument['url']
+                            if not self.url_in_a_collection(result) and not self.suspended_url(result) and not self.blacklisted_url(result):
+                                self.insert_url_into_urls(result, url, 1, 0, False, False, False)
                             #endif
                         #endif
                     except:
@@ -1449,13 +1524,8 @@ class riscosspider:
                                         result = ""
                                 #endif
                                 if result:
-                                    if not self.url_in_riscos(result) and not self.url_in_urls(result) and not self.url_in_rejects(result) and not self.url_in_reserves(result) and not self.suspended_url(result) and not self.blacklisted_url(result):
-                                        subDocument = {}
-                                        subDocument['url'] = result
-                                        subDocument['parent_url'] = url
-                                        subDocument['last_scanned'] = 1                                
-                                        self.urlsCollection.insert(subDocument)
-                                        print "Inserting into urls: "+subDocument['url']
+                                    if not self.url_in_a_collection(result) and not self.suspended_url(result) and not self.blacklisted_url(result):
+                                        self.insert_url_into_urls(result, url, 1, 0, False, False, False)
                                     #endif
                                 #endif
                             #endif
@@ -1487,11 +1557,7 @@ class riscosspider:
                 if url and self.lastSuccessfulInternetConnection >= epoch-60:
                     self.urlsCollection.remove({'url':url})
                     print 'Removing from urls: '+url
-                    rejectDocument = {}
-                    rejectDocument['url'] = url
-                    rejectDocument['last_scanned'] = epoch
-                    self.rejectsCollection.insert(rejectDocument)
-                    print "Inserting into rejects: "+rejectDocument['url']
+                    self.insert_url_into_rejects(url)
                     latestMessage = 'URL <a href="'+url+'">'+url+'</a> has been rejected as not RISC OS-related!'
                 #endif
             #endif
@@ -1499,12 +1565,54 @@ class riscosspider:
         return latestMessage
     #enddef    
     
+    def insert_url_into_urls(self, url, parent_url="", last_scanned=0, next_scan=0, syndicated_feed=False, riscos_xml=False, seed=False):
+        epoch = int(time.time())
+        urlDocument = {}
+        urlDocument['url'] = url
+        if parent_url:
+            urlDocument['parent_url'] = parent_url
+        #endif
+        if seed:
+            urlDocument['seed'] = True
+        #endif
+        if url.lower().endswith('.zip') or url.lower().__contains__('.zip?'):
+            urlDocument['zip_file'] = url
+            urlDocument['last_scanned'] = 0
+        elif riscos_xml or url.lower().endswith('/riscos.xml'):
+            urlDocument['riscos_xml'] = url
+        elif syndicated_feed:
+            urlDocument['syndicated_feed'] = url
+        elif seed:
+            urlDocument['last_scanned'] = 0
+        elif last_scanned:
+            urlDocument['last_scanned'] = last_scanned
+        else:
+            urlDocument['last_scanned'] = 1
+        #endif
+        if next_scan:
+            urlDocument['next_scan'] = next_scan
+        else:
+            urlDocument['next_scan'] = epoch
+        #endif
+        self.urlsCollection.insert(urlDocument)
+        print 'Inserting into urls: '+url     
+    #enddef
+    
+    def insert_url_into_rejects(self, url):
+        epoch = int(time.time())
+        rejectDocument = {}
+        rejectDocument['url'] = url
+        rejectDocument['last_scanned'] = epoch
+        self.rejectsCollection.insert(rejectDocument)
+        print 'Inserting into rejects: '+url     
+    #enddef
+    
     def riscos_xml_search(self,url):
         epoch = int(time.time())
         (scheme,netloc,path,query,fragment) = urlparse.urlsplit(url)
         riscos_xml_urls = [scheme+'://'+netloc+'/riscos.xml',scheme+'://'+netloc+'/'+path+'/riscos.xml']
         for riscos_xml_url in riscos_xml_urls:
-            if not self.url_in_riscos(riscos_xml_url) and not self.url_in_urls(riscos_xml_url) and not self.url_in_rejects(riscos_xml_url) and not self.url_in_reserves(riscos_xml_url) and not self.suspended_url(riscos_xml_url) and not self.blacklisted_url(riscos_xml_url):
+            if not self.url_in_a_collection(riscos_xml_url) and not self.suspended_url(riscos_xml_url) and not self.blacklisted_url(riscos_xml_url):
                 print 'Searching for '+url+'...'
                 req = urllib2.Request(riscos_xml_url)
                 req.add_unredirected_header('User-Agent', 'RISC OS Search Engine http://www.shalfield.com/riscos')
@@ -1514,7 +1622,12 @@ class riscosspider:
                     data = urlp.read()
                     urlp.close()
                     if data:
-                        self.process_riscos_xml_file(url,data)       
+                        lastModified = ""
+                        if urlp.headers.has_key('last-modified') and urlp.headers['last-modified']:
+                            rawLastModified = urlp.headers['last-modified']
+                            lastModified = int(time.mktime(time.strptime(rawLastModified[5:25],"%d %b %Y %H:%M:%S")))
+                        #endif
+                        self.process_riscos_xml_file(url,data,lastModified)     
                     #endif
                 except HTTPError, error:
                     if error.code == 404:
@@ -1526,11 +1639,7 @@ class riscosspider:
                     found = False
                 #endtryexcept
                 if not found:
-                    newDocument = {}
-                    newDocument['url'] = url
-                    newDocument['last_scanned'] = epoch
-                    newDocument['next_scan'] = epoch + self.periodYear
-                    self.rejectsCollection.insert(newDocument)           
+                    self.insert_url_into_rejects(url)           
                 #endif
                 if found:
                     break
@@ -1539,178 +1648,227 @@ class riscosspider:
         #endfor
     #enddef
     
-    def process_riscos_xml_file(self, parent_url, xmlcode):
+    def calculate_next_scan_time(self, lastModified, epoch):
+        nextScan = epoch + self.periodYear
+        timeSinceModified = epoch - lastModified
+        if timeSinceModified < self.periodYear:
+            nextScan = epoch + timeSinceModified
+        #endif
+        return nextScan
+    #enddef
+    
+    def process_riscos_xml_file(self, parent_url, xmlcode, lastModified):
         for riscosXmlDocument in self.riscosCollection.find({'parent_url':parent_url}):
             print 'Removing riscos.xml entry for '+riscosXmlDocument['parent_url']+'...'
             self.riscosCollection.remove({'_id':ObjectId(riscosXmlDocument['_id'])})
         #endfor
         print 'Processing '+parent_url+'...'
+
         try:
             riscos = etree.XML(xmlcode)
-            #print etree.tostring(riscos, pretty_print=True)
-            for subelement in riscos.iter():
-                if subelement.tag.lower() == 'dealers':
-                    self.process_riscos_xml_dealers_element(parent_url, subelement)
-                elif subelement.tag.lower() == 'developers':
-                    self.process_riscos_xml_developers_element(parent_url, subelement)
-                elif subelement.tag.lower() == 'events':
-                    self.process_riscos_xml_events_element(parent_url, subelement)
-                elif subelement.tag.lower() == 'forums':
-                    self.process_riscos_xml_forums_element(parent_url, subelement)
-                elif subelement.tag.lower() == 'glossary':
-                    self.process_riscos_xml_glossary_element(parent_url, subelement)
-                elif subelement.tag.lower() == 'hardware':
-                    self.process_riscos_xml_hardware_element(parent_url, subelement)
-                elif subelement.tag.lower() == 'publications':
-                    self.process_riscos_xml_publications_element(parent_url, subelement)
-                elif subelement.tag.lower() == 'services':
-                    self.process_riscos_xml_services_element(parent_url, subelement)   
-                elif subelement.tag.lower() == 'software':
-                    self.process_riscos_xml_software_element(parent_url, subelement)
-                elif subelement.tag.lower() in ['user_groups','usergroups']:
-                    self.process_riscos_xml_usergroups_element(parent_url, subelement)
-                elif subelement.tag.lower() == 'videos':
-                    self.process_riscos_xml_videos_element(parent_url, subelement)                    
+            for subelement in riscos.iterchildren():
+                print 'Processing tag: '+riscos.tag+' -> '+subelement.tag
+                if subelement.tag == 'absolutes':
+                    self.process_riscos_xml_absolutes_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'anniversaries':
+                    self.process_riscos_xml_anniversaries_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'apps':
+                    self.process_riscos_xml_apps_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'books':
+                    self.process_riscos_xml_books_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'computers':
+                    self.process_riscos_xml_computers_element(parent_url, subelement, lastModified)                    
+                elif subelement.tag == 'dealers':
+                    self.process_riscos_xml_dealers_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'developers':
+                    self.process_riscos_xml_developers_element(parent_url, subelement, lastModified)
+                elif subelement.tag.lower() == 'errormessages':
+                    self.process_riscos_xml_errormessages_element(parent_url, subelement, lastModified)                    
+                elif subelement.tag == 'events':
+                    self.process_riscos_xml_events_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'faqs':
+                    self.process_riscos_xml_faqs_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'fonts':
+                    self.process_riscos_xml_fonts_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'forums':
+                    self.process_riscos_xml_forums_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'glossary':
+                    self.process_riscos_xml_glossary_element(parent_url, subelement, lastModified)
+                elif subelement.tag.lower() == 'howtos':
+                    self.process_riscos_xml_howtos_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'magazines':
+                    self.process_riscos_xml_magazines_element(parent_url, subelement, lastModified)
+                elif subelement.tag.lower() == 'monitordefinitionfiles':
+                    self.process_riscos_xml_monitor_definition_files_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'peripherals':
+                    self.process_riscos_xml_peripherals_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'podules':
+                    self.process_riscos_xml_podules_element(parent_url, subelement, lastModified)
+                elif subelement.tag.lower() == 'printerdefinitionfiles':
+                    self.process_riscos_xml_printer_definition_files_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'projects':
+                    self.process_riscos_xml_projects_element(parent_url, subelement, lastModified)
+                elif subelement.tag.lower() == 'relocatablemodules':
+                    self.process_riscos_xml_standalone_relocatable_modules_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'services':
+                    self.process_riscos_xml_services_element(parent_url, subelement, lastModified)   
+                elif subelement.tag.lower() == 'usergroups':
+                    self.process_riscos_xml_usergroups_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'utilities':
+                    self.process_riscos_xml_standalone_utilities_element(parent_url, subelement, lastModified)
+                elif subelement.tag == 'videos':
+                    self.process_riscos_xml_videos_element(parent_url, subelement, lastModified)
+                else:
+                    print "Unknown riscos.xml code: "+etree.tostring(subelement)         
                 #endif
             #endfor
         except:
-            True
+            print 'Error: Unable to parse riscos.xml file!'
     #enddef
-
-    def process_riscos_xml_dealers_element(self, parent_url, dealersElement):
+    
+    def process_riscos_xml_dealers_element(self, parent_url, dealersElement, lastModified):
         print 'Processing '+dealersElement.tag+'...'
-        for subelement in dealersElement.iter():
-            if subelement.tag.lower() == 'dealer':
-                self.process_riscos_xml_dealer_element(parent_url, subelement)
+        for subelement in dealersElement.iterchildren():
+            print 'Processing tag: '+dealersElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'dealer':
+                self.process_riscos_xml_dealer_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef   
     
-    def process_riscos_xml_dealer_element(self, parent_url, dealerElement):
-        epoch = int(time.time())
-        dealer = ""
-        address = ""
-        description = ""
-        email = ""
-        telephone = ""
-        url = ""
+    def process_riscos_xml_dealer_element(self, parent_url, dealerElement, lastModified):
+        newDocument = {}
         print 'Processing '+dealerElement.tag+'...'
-        #xmlcode = etree.tostring(dealerElement)
-        #print xmlcode
-        for subelement in dealerElement.iter():
-            if subelement.tag.lower() == 'address':
-                address = subelement.text
-                print 'Address: '+address
-            elif subelement.tag.lower() == 'description':
+        for subelement in dealerElement.iterchildren():
+            print 'Processing tag: '+dealerElement.tag+' -> '+subelement.tag
+            if subelement.tag in ['address','contact','email','telephone','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
+            elif subelement.tag == 'description':
                 description = subelement.text
                 print 'Description: '+description
-            elif subelement.tag.lower() == 'email':
-                email = subelement.text
-                print 'Email: '+email    
-            elif subelement.tag.lower() == 'name':
+                newDocument['description'] = description
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor               
+            elif subelement.tag == 'name':
                 dealer = subelement.text
                 print 'Dealer: '+dealer
-            elif subelement.tag.lower() == 'telephone':
-                telephone = subelement.text
-                print 'Telephone: '+telephone
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
+                newDocument['dealer'] = dealer
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if dealer and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['dealer'] = dealer
-            newDocument['address'] = address
-            newDocument['description'] = description
-            newDocument['email'] = email
-            newDocument['telephone'] = telephone
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
     #enddef 
     
-    def process_riscos_xml_developers_element(self, parent_url, developersElement):
+    def process_riscos_xml_developers_element(self, parent_url, developersElement, lastModified):
         print 'Processing '+developersElement.tag+'...'
-        for subelement in developersElement.iter():
-            if subelement.tag.lower() == 'developer':
-                self.process_riscos_xml_developer_element(parent_url, subelement)
+        for subelement in developersElement.iterchildren():
+            print 'Processing tag: '+developersElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'developer':
+                self.process_riscos_xml_developer_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)                
             #endif
         #endfor
     #enddef   
     
-    def process_riscos_xml_developer_element(self, parent_url, developerElement):
-        epoch = int(time.time())
-        developer = ""
-        address = ""
-        description = ""
-        email = ""
-        telephone = ""
-        url = ""
+    def process_riscos_xml_developer_element(self, parent_url, developerElement, lastModified):
+        newDocument = {}
         print 'Processing '+developerElement.tag+'...'
-        #xmlcode = etree.tostring(developerElement)
-        #print xmlcode
-        for subelement in developerElement.iter():
-            if subelement.tag.lower() == 'address':
-                address = subelement.text
-                print 'Address: '+address
+        for subelement in developerElement.iterchildren():
+            print 'Processing tag: '+developerElement.tag+' -> '+subelement.tag
+            if subelement.tag in ['address','contact','email','telephone','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
             elif subelement.tag.lower() == 'description':
-                description = subelement.text
-                print 'Description: '+description
-            elif subelement.tag.lower() == 'email':
-                email = subelement.text
-                print 'Email: '+email    
+                print 'Description: '+subelement.text
+                newDocument['description'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor               
             elif subelement.tag.lower() == 'name':
                 developer = subelement.text
                 print 'Developer: '+developer
-            elif subelement.tag.lower() == 'telephone':
-                telephone = subelement.text
-                print 'Telephone: '+telephone
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
+                newDocument['developer'] = developer
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if developer and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['developer'] = developer
-            newDocument['address'] = address
-            newDocument['description'] = description
-            newDocument['email'] = email
-            newDocument['telephone'] = telephone
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
     #enddef 
 
-    def process_riscos_xml_events_element(self, parent_url, eventsElement):
+    def process_riscos_xml_errormessages_element(self, parent_url, errormessagesElement, lastModified):
+        print 'Processing '+errormessagesElement.tag+'...'
+        for subelement in errormessagesElement.iterchildren():
+            if subelement.tag.lower() == 'errormessage':
+                print 'Processing tag: '+errormessagesElement.tag+' -> '+subelement.tag
+                self.process_riscos_xml_errormessage_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+    #enddef 
+    
+    def process_riscos_xml_errormessage_element(self, parent_url, errormessageElement, lastModified):
+        newDocument = {}
+        print 'Processing '+errormessageElement.tag+'...'
+        for subelement in errormessageElement.iterchildren():
+            print 'Processing tag: '+errormessageElement.tag+' -> '+subelement.tag
+            if subelement.tag in ['cause','solution']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag == 'message':
+                errormessage = subelement.text
+                print 'Error Message: '+errormessage
+                newDocument['error_message'] = errormessage
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef
+    
+    def process_riscos_xml_events_element(self, parent_url, eventsElement, lastModified):
         print 'Processing '+eventsElement.tag+'...'
-        for subelement in eventsElement.iter():
-            if subelement.tag.lower() == 'event':
-                self.process_riscos_xml_event_element(parent_url, subelement)
+        for subelement in eventsElement.iterchildren():
+            if subelement.tag == 'event':
+                print 'Processing tag: '+eventsElement.tag+' -> '+subelement.tag
+                self.process_riscos_xml_event_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef   
     
-    def process_riscos_xml_event_element(self, parent_url, eventElement):
-        epoch = int(time.time())
-        event = ""
-        date = ""
-        description = ""
-        url = ""
+    def process_riscos_xml_event_element(self, parent_url, eventElement, lastModified):
+        newDocument = {}
         print 'Processing '+eventElement.tag+'...'
-        #xmlcode = etree.tostring(eventElement)
-        #print xmlcode
-        for subelement in eventElement.iter():
-            if subelement.tag.lower() == 'date':
+        for subelement in eventElement.iterchildren():
+            print 'Processing tag: '+eventElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text      
+            elif subelement.tag.lower() == 'date':
                 day = ""
                 month = ""
                 year = ""
@@ -1723,464 +1881,407 @@ class riscosspider:
                         year = value
                     #endif
                 #endfor
-                date = year+'-'+month+'-'+day
                 print 'Date: '+year+'-'+month+'-'+day
+                secsSinceEpoch = int(time.mktime((int(year),int(month),int(day),0,0,0,0,0,0)))
+                newDocument['date'] = secsSinceEpoch
             elif subelement.tag.lower() == 'description':
                 description = subelement.text
-                print 'Description: '+description   
+                print 'Description: '+description
+                newDocument['description'] = description
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor                
             elif subelement.tag.lower() == 'title':
-                event = subelement.text
-                print 'Event: '+event
+                print 'Event: '+subelement.text
+                newDocument['event'] = subelement.text
             elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
+                print 'URL: '+subelement.text
+                newDocument['url'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if event and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['date'] = date
-            newDocument['event'] = event
-            newDocument['description'] = description
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
-    #enddef     
+    #enddef
 
-    def process_riscos_xml_forums_element(self, parent_url, forumsElement):
+    def process_riscos_xml_forums_element(self, parent_url, forumsElement, lastModified):
         print 'Processing '+forumsElement.tag+'...'
-        for subelement in forumsElement.iter():
+        for subelement in forumsElement.iterchildren():
+            print 'Processing tag: '+forumsElement.tag+' -> '+subelement.tag
             if subelement.tag.lower() == 'forum':
-                self.process_riscos_xml_forum_element(parent_url, subelement)
+                self.process_riscos_xml_forum_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef   
     
-    def process_riscos_xml_forum_element(self, parent_url, forumElement):
-        epoch = int(time.time())
-        forum = ""
-        description = ""
-        url = ""
+    def process_riscos_xml_forum_element(self, parent_url, forumElement, lastModified):
+        newDocument = {}
         print 'Processing '+forumElement.tag+'...'
         #xmlcode = etree.tostring(forumElement)
         #print xmlcode
-        for subelement in forumElement.iter():
-            if subelement.tag.lower() == 'description':
-                description = subelement.text
-                print 'Description: '+description   
-            elif subelement.tag.lower() == 'name':
-                forum = subelement.text
-                print 'Forum: '+forum
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
-            #endif
-        #endfor
-        if forum and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['forum'] = forum
-            newDocument['description'] = description
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
-        #endif
-    #enddef     
-
-    def process_riscos_xml_hardware_element(self, parent_url, hardwareElement):
-        print 'Processing '+hardwareElement.tag+'...'
-        for subelement in hardwareElement.iter():
-            if subelement.tag.lower() == 'computers':
-                self.process_riscos_xml_computers_element(parent_url, subelement)            
-            elif subelement.tag.lower() == 'podules':
-                self.process_riscos_xml_podules_element(parent_url, subelement)
-            #endif
-        #endfor            
-    #enddef
-    
-    def process_riscos_xml_computers_element(self, parent_url, computersElement):
-        print 'Processing '+computersElement.tag+'...'
-        for subelement in computersElement.iter():
-            if subelement.tag.lower() == 'computer':
-                self.process_riscos_xml_computer_element(parent_url, subelement)            
-            #endif
-        #endfor
-    #enddef
-
-    def process_riscos_xml_computer_element(self, parent_url, computerElement):
-        epoch = int(time.time())
-        developer = ""
-        description = ""
-        computer = ""
-        url = ""
-        print 'Processing '+computerElement.tag+'...'
-        for subelement in computerElement.iter():
-            if subelement.tag.lower() == 'description':
-                description = subelement.text
-                print 'Description: '+description
-            elif subelement.tag.lower() == 'developer':
-                developer = subelement.text
-                print 'Developer: '+developer
-            elif subelement.tag.lower() == 'name':
-                computer = subelement.text
-                print 'Computer: '+computer
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
-            #endif
-        #endfor
-        if computer and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['computer'] = computer
-            newDocument['developer'] = developer
-            newDocument['description'] = description
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
-        #endif
-    #enddef
-    
-    def process_riscos_xml_podules_element(self, parent_url, podulesElement):
-        print 'Processing '+podulesElement.tag+'...'
-        for subelement in podulesElement.iter():
-            if subelement.tag.lower() == 'podule':
-                self.process_riscos_xml_podule_element(parent_url, subelement)            
-            #endif
-        #endfor
-    #enddef
-
-    def process_riscos_xml_podule_element(self, parent_url, poduleElement):
-        epoch = int(time.time())
-        developer = ""
-        description = ""
-        podule = ""
-        url = ""
-        print 'Processing '+poduleElement.tag+'...'
-        for subelement in poduleElement.iter():
-            if subelement.tag.lower() == 'description':
-                description = subelement.text
-                print 'Description: '+description
-            elif subelement.tag.lower() == 'developer':
-                developer = subelement.text
-                print 'Developer: '+developer
-            elif subelement.tag.lower() == 'name':
-                podule = subelement.text
-                print 'Podule: '+podule
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
-            #endif
-        #endfor
-        if podule and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['podule'] = podule
-            newDocument['developer'] = developer
-            newDocument['description'] = description
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
-        #endif
-    #enddef    
-    
-    def process_riscos_xml_publications_element(self, parent_url, publicationsElement):
-        print 'Processing '+publicationsElement.tag+'...'
-        for subelement in publicationsElement.iter():
-            if subelement.tag.lower() == 'books':
-                self.process_riscos_xml_books_element(parent_url, subelement)
-            elif subelement.tag.lower() == 'magazines':
-                self.process_riscos_xml_magazines_element(parent_url, subelement)
-            #endif
-        #endfor
-    #enddef
-    
-    def process_riscos_xml_books_element(self, parent_url, booksElement):
-        print 'Processing '+booksElement.tag+'...'
-        for subelement in booksElement.iter():
-            if subelement.tag.lower() == 'book':
-                self.process_riscos_xml_book_element(parent_url, subelement)
-            #endif
-        #endfor
-    #enddef    
-    
-    def process_riscos_xml_book_element(self, parent_url, bookElement):
-        epoch = int(time.time())
-        newDocument = {}
-        description = ""
-        isbn = ""
-        price = ""
-        publisher = ""
-        title = ""
-        url = ""        
-        print 'Processing '+bookElement.tag+'...'
-        for subelement in bookElement.iter():
-            if subelement.tag.lower() == 'description':
+        for subelement in forumElement.iterchildren():
+            print 'Processing tag: '+forumElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
+            elif subelement.tag.lower() == 'description':
                 description = subelement.text
                 print 'Description: '+description
                 newDocument['description'] = description
-            elif subelement.tag.lower() == 'isbn':
-                isbn = subelement.text
-                print 'ISBN: '+isbn
-                newDocument['identifier'] = isbn
-            elif subelement.tag.lower() == 'price':
-                currency = ""
                 for attr, value in subelement.items():
-                    if attr == 'currency':
-                        currency = value
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
                     #endif
                 #endfor
-                price = subelement.text+currency
-                print 'Price: '+price
-                newDocument['price'] = price
-            elif subelement.tag.lower() == 'publisher':
-                publisher = subelement.text
-                print 'Publisher: '+publisher
-                newDocument['publisher'] = publisher
-            elif subelement.tag.lower() == 'title':
-                title = subelement.text
-                print 'Title: '+title
-                newDocument['book'] = title
+            elif subelement.tag.lower() == 'name':
+                forum = subelement.text
+                print 'Forum: '+forum
+                newDocument['forum'] = forum
             elif subelement.tag.lower() == 'url':
                 url = subelement.text
                 print 'URL: '+url
                 newDocument['url'] = url
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
         if newDocument:
-            newDocument['riscos_xml'] = parent_url
-            newDocument['parent_url'] = parent_url
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
-    #enddef 
-
-    def process_riscos_xml_magazines_element(self, parent_url, magazinesElement):
-        print 'Processing '+magazinesElement.tag+'...'
-        for subelement in magazinesElement.iter():
-            if subelement.tag.lower() == 'magazine':
-                self.process_riscos_xml_magazine_element(parent_url, subelement)
+    #enddef   
+   
+    def process_riscos_xml_computers_element(self, parent_url, computersElement, lastModified):
+        print 'Processing '+computersElement.tag+'...'
+        for subelement in computersElement.iterchildren():
+            print 'Processing tag: '+computersElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'computer':
+                self.process_riscos_xml_computer_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)                
             #endif
         #endfor
     #enddef
-    
-    def process_riscos_xml_magazine_element(self, parent_url, magazineElement):
-        epoch = int(time.time())
-        description = ""
-        issn = ""
-        price = ""
-        publisher = ""
-        title = ""
-        url = ""        
-        print 'Processing '+magazineElement.tag+'...'
-        for subelement in magazineElement.iter():
-            if subelement.tag.lower() == 'description':
-                description = subelement.text
-                print 'Description: '+description
-            elif subelement.tag.lower() == 'issn':
-                issn = subelement.text
-                print 'ISSN: '+issn
-            elif subelement.tag.lower() == 'price':
-                currency = ""
-                for attr, value in subelement.items():
-                    if attr == 'currency':
-                        currency = value
-                    #endif
-                #endfor
-                price = subelement.text+currency
-                print 'Price: '+price
-            elif subelement.tag.lower() == 'publisher':
-                publisher = subelement.text
-                print 'Publisher: '+publisher
-            elif subelement.tag.lower() == 'title':
-                title = subelement.text
-                print 'Title: '+title
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
-            #endif
-        #endfor
-        if title and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['magazine'] = title
-            newDocument['identifier'] = issn
-            newDocument['price'] = price
-            newDocument['publisher'] = publisher
-            newDocument['description'] = description
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
-        #endif
-    #enddef 
-    
-    def process_riscos_xml_services_element(self, parent_url, servicesElement):
-        print 'Processing '+servicesElement.tag+'...'
-        for subelement in servicesElement.iter():
-            if subelement.tag.lower() == 'service':
-                self.process_riscos_xml_service_element(parent_url, subelement)
-            #endif
-        #endfor
-    #enddef   
-    
-    def process_riscos_xml_service_element(self, parent_url, serviceElement):
-        epoch = int(time.time())
-        provider = ""
-        address = ""
-        category = ""
-        description = ""
-        email = ""
-        telephone = ""
-        url = ""
-        print 'Processing '+serviceElement.tag+'...'
-        #xmlcode = etree.tostring(serviceElement)
-        #print xmlcode
-        for subelement in serviceElement.iter():
-            if subelement.tag.lower() == 'address':
-                address = subelement.text
-                print 'Address: '+address
+
+    def process_riscos_xml_computer_element(self, parent_url, computerElement, lastModified):
+        newDocument = {}
+        print 'Processing '+computerElement.tag+'...'
+        for subelement in computerElement.iterchildren():
+            print 'Processing tag: '+computerElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
             elif subelement.tag.lower() == 'description':
                 description = subelement.text
                 print 'Description: '+description
-            elif subelement.tag.lower() == 'email':
-                email = subelement.text
-                print 'Email: '+email    
+                newDocument['description'] = description
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'identifier':
+                print 'Identifier: '+subelement.text
+                newDocument['identifier'] = subelement.text
             elif subelement.tag.lower() == 'name':
-                provider = subelement.text
-                print 'Provider: '+provider
-            elif subelement.tag.lower() == 'telephone':
-                telephone = subelement.text
-                print 'Telephone: '+telephone
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
+                print 'Computer: '+subelement.text
+                newDocument['computer'] = subelement.text
+            elif subelement.tag.lower() == 'pricing':
+                pricing = self.process_riscos_xml_pricing_element(subelement)
+                newDocument['pricing'] = pricing
+            elif subelement.tag in ['developer','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if provider and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['provider'] = provider
-            newDocument['address'] = address
-            newDocument['category'] = category
-            newDocument['description'] = description
-            newDocument['email'] = email
-            newDocument['telephone'] = telephone
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
+    #enddef
+    
+    def process_riscos_xml_peripherals_element(self, parent_url, peripheralsElement, lastModified):
+        print 'Processing '+peripheralsElement.tag+'...'
+        for subelement in peripheralsElement.iterchildren():
+            print 'Processing tag: '+peripheralsElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'peripheral':
+                self.process_riscos_xml_peripheral_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)                
+            #endif
+        #endfor
     #enddef 
+
+    def process_riscos_xml_peripheral_element(self, parent_url, peripheralElement, lastModified):
+        newDocument = {}       
+        print 'Processing '+peripheralElement.tag+'...'
+        for subelement in peripheralElement.iterchildren():
+            print 'Processing tag: '+peripheralElement.tag+' -> '+subelement.tag  
+            if subelement.tag.lower() == 'devicetype':
+                print 'Device Type: '+subelement.text
+                newDocument['device_type'] = subelement.text          
+            elif subelement.tag.lower() == 'name':
+                print 'Peripheral: '+subelement.text
+                newDocument['peripheral'] = subelement.text
+            elif subelement.tag in ['developer','identifier','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag == 'description':
+                print 'Description: '+subelement.text
+                newDocument['description'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor                
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef     
     
-    def process_riscos_xml_software_element(self, parent_url, softwareElement):
-        print 'Processing '+softwareElement.tag+'...'
-        #xmlcode = etree.tostring(softwareElement)
-        #print xmlcode
-        for subelement in softwareElement.iter():
-            if subelement.tag.lower() == 'absolutes':
-                self.process_riscos_xml_absolutes_element(parent_url, subelement)            
-            elif subelement.tag.lower() == 'apps':
-                self.process_riscos_xml_apps_element(parent_url, subelement)
-            elif subelement.tag.lower() == 'fonts':
-                self.process_riscos_xml_fonts_element(parent_url, subelement)
-            elif subelement.tag.lower() in ['modules','relocatablemodules'] or subelement.tag.lower() in ['relocatable_modules']:
-                self.process_riscos_xml_modules_element(parent_url, subelement)
-            elif subelement.tag.lower() == 'monitor_definition_files' or subelement.tag.lower() in ['monitordefinitionfiles','mdfs']:
-                self.process_riscos_xml_monitor_definition_files_element(parent_url, subelement)
-            elif subelement.tag.lower() == 'printer_definition_files' or subelement.tag.lower() in ['printerdefinitionfiles','pdfs']:
-                self.process_riscos_xml_printer_definition_files_element(parent_url, subelement)
-            elif subelement.tag.lower() == 'utilities':
-                self.process_riscos_xml_utilities_element(parent_url, subelement)
+    def process_riscos_xml_podules_element(self, parent_url, podulesElement, lastModified):
+        print 'Processing '+podulesElement.tag+'...'
+        for subelement in podulesElement.iterchildren():
+            print 'Processing tag: '+podulesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'podule':
+                self.process_riscos_xml_podule_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)                
             #endif
         #endfor
     #enddef
 
-    def process_riscos_xml_absolutes_element(self, parent_url, absolutesElement):
-        print 'Processing '+absolutesElement.tag+'...'
-        for subelement in absolutesElement.iter():
-            if subelement.tag.lower() == 'absolute':
-                self.process_riscos_xml_absolute_element(parent_url, subelement)
+    def process_riscos_xml_podule_element(self, parent_url, poduleElement, lastModified):
+        newDocument = {}
+        print 'Processing '+poduleElement.tag+'...'
+        for subelement in poduleElement.iterchildren():
+            print 'Processing tag: '+poduleElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
+            elif subelement.tag in ['developer','identifier','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag == 'description':
+                print 'Description: '+subelement.text
+                newDocument['description'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag == 'image':    
+                for attr, value in subelement.items():
+                    if attr == 'caption':
+                        newDocument['image_caption'] = value
+                    elif attr == 'url':
+                        newDocument['image_url'] = value
+                    #endif
+                #endfor                
+            elif subelement.tag == 'name':
+                podule = subelement.text
+                print 'Podule: '+podule
+                newDocument['podule'] = podule
+            elif subelement.tag == 'pricing':
+                pricing = self.process_riscos_xml_pricing_element(subelement)
+                newDocument['pricing'] = pricing
+            elif subelement.tag.lower() == 'relocatablemodules':
+                relocatableModules = self.process_riscos_xml_embedded_relocatable_modules_element(subelement)
+                newDocument['relocatable_modules'] = relocatableModules
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef    
+    
+    def process_riscos_xml_faqs_element(self, parent_url, faqsElement, lastModified):
+        print 'Processing '+faqsElement.tag+'...'
+        for subelement in faqsElement.iterchildren():
+            print 'Processing tag: '+faqsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'faq':
+                self.process_riscos_xml_faq_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+    #enddef    
+    
+    def process_riscos_xml_faq_element(self, parent_url, faqElement, lastModified):
+        newDocument = {}       
+        print 'Processing '+faqElement.tag+'...'
+        for subelement in faqElement.iterchildren():
+            print 'Processing tag: '+faqElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'image':
+                for attr, value in subelement.items():
+                    if attr == 'caption':
+                        newDocument['image_caption'] = value
+                    elif attr == 'url':
+                        newDocument['image_url'] = value
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'sourcecode':
+                newDocument['source_code'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'programminglanguage':
+                        newDocument['programming_languages'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'question':
+                print 'Question: '+subelement.text
+                newDocument['question'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'answer':
+                print 'Answer: '+subelement.text
+                newDocument['answer'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef     
+    
+    def process_riscos_xml_howtos_element(self, parent_url, howtosElement, lastModified):
+        print 'Processing '+howtosElement.tag+'...'
+        for subelement in howtosElement.iterchildren():
+            print 'Processing tag: '+howtosElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'howto':
+                self.process_riscos_xml_howto_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+    #enddef    
+    
+    def process_riscos_xml_howto_element(self, parent_url, howtoElement, lastModified):
+        newDocument = {}       
+        print 'Processing '+howtoElement.tag+'...'
+        for subelement in howtoElement.iterchildren():
+            print 'Processing tag: '+howtoElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'image':
+                for attr, value in subelement.items():
+                    if attr == 'caption':
+                        newDocument['image_caption'] = value
+                    elif attr == 'url':
+                        newDocument['image_url'] = value
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'sourcecode':
+                newDocument['source_code'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'programminglanguage':
+                        newDocument['programming_languages'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag == 'task':
+                print 'Task: '+subelement.text
+                newDocument['howto'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag == 'description':
+                print 'Description: '+subelement.text
+                newDocument['description'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef      
+    
+    def process_riscos_xml_projects_element(self, parent_url, projectsElement, lastModified):
+        print 'Processing '+projectsElement.tag+'...'
+        for subelement in projectsElement.iterchildren():
+            print 'Processing tag: '+projectsElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'project':
+                self.process_riscos_xml_project_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef
 
-    def process_riscos_xml_absolute_element(self, parent_url, absoluteElement):
-        epoch = int(time.time())
-        absolute = ""
-        url = ""
-        print 'Processing '+absoluteElement.tag+'...'
-        #xmlcode = etree.tostring(absoluteElement)
-        #print xmlcode
-        for subelement in absoluteElement.iter():
-            if subelement.tag.lower() == 'name':
-                absolute = subelement.text
-                print 'Absolute: '+absolute
-            elif subelement.tag.lower() == 'url':
+    def process_riscos_xml_project_element(self, parent_url, projectElement, lastModified):
+        newDocument = {}       
+        print 'Processing '+projectElement.tag+'...'
+        for subelement in projectElement.iterchildren():
+            print 'Processing tag: '+projectElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'description':
+                description = subelement.text
+                print 'Description: '+description
+                newDocument['description'] = description
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag == 'name':
+                name = subelement.text
+                print 'Name: '+name
+                newDocument['project'] = name
+            elif subelement.tag == 'url':
                 url = subelement.text
                 print 'URL: '+url
+                newDocument['url'] = url
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if absolute and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['absolutes'] = [absolute]
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
-    #enddef
-    
-    def process_riscos_xml_apps_element(self, parent_url, appsElement):
-        print 'Processing '+appsElement.tag+'...'
-        #xmlcode = etree.tostring(appsElement)
-        #print xmlcode
-        for subelement in appsElement.iter():
-            if subelement.tag.lower() == 'app':
-                self.process_riscos_xml_app_element(parent_url, subelement)
+    #enddef     
+       
+    def process_riscos_xml_anniversaries_element(self, parent_url, anniversariesElement, lastModified):
+        print 'Processing '+anniversariesElement.tag+'...'
+        for subelement in anniversariesElement.iterchildren():
+            print 'Processing tag: '+anniversariesElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'anniversary':
+                self.process_riscos_xml_anniversary_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef
-
-    def process_riscos_xml_app_element(self, parent_url, softwareElement):
-        epoch = int(time.time())
-        author = ""
-        copyright = ""
-        date = ""
-        description = ""
-        developer = ""
-        directory = ""
-        license = ""
-        maintainer = ""
-        name = ""
-        price = ""
-        url = ""
-        version = ""
-        print 'Processing '+softwareElement.tag+'...'
-        #xmlcode = etree.tostring(softwareElement)
-        #print xmlcode
-        for subelement in softwareElement.iter():
-            if subelement.tag.lower() == 'author':
-                author = subelement.text
-                print 'Author: '+author
-            elif subelement.tag.lower() == 'copyright':
-                copyright = subelement.text
-                print 'Copyright: '+copyright
-            elif subelement.tag.lower() == 'released':
+       
+    def process_riscos_xml_anniversary_element(self, parent_url, bookElement, lastModified):
+        newDocument = {}      
+        print 'Processing '+bookElement.tag+'...'
+        for subelement in bookElement.iterchildren():
+            print 'Processing tag: '+bookElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'date':
                 day = ""
                 month = ""
                 year = ""
@@ -2193,153 +2294,794 @@ class riscosspider:
                         year = value
                     #endif
                 #endfor
-                print 'Date: '+day+'-'+month+'-'+year
+                print 'Date: '+year+'-'+month+'-'+day
+                secsSinceEpoch = time.mktime((int(year),int(month),int(day),0,0,0,0,0,0))
+                newDocument['date'] = secsSinceEpoch
+            elif subelement.tag == 'description':
+                description = subelement.text
+                print 'Description: '+description
+                newDocument['description'] = description
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'title':
+                print 'Anniversary: '+subelement.text
+                newDocument['anniversary'] = subelement.text
+            elif subelement.tag == 'url':
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef 
+       
+    def process_riscos_xml_books_element(self, parent_url, booksElement, lastModified):
+        print 'Processing '+booksElement.tag+'...'
+        for subelement in booksElement.iterchildren():
+            print 'Processing tag: '+booksElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'book':
+                self.process_riscos_xml_book_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+    #enddef    
+    
+    def process_riscos_xml_book_element(self, parent_url, bookElement, lastModified):
+        newDocument = {}      
+        print 'Processing '+bookElement.tag+'...'
+        for subelement in bookElement.iterchildren():
+            print 'Processing tag: '+bookElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
+            elif subelement.tag == 'description':
+                description = subelement.text
+                print 'Description: '+description
+                newDocument['description'] = description
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag == 'isbn':
+                print 'ISBN: '+subelement.text
+                newDocument['identifier'] = subelement.text
+            elif subelement.tag.lower() == 'image':
+                for attr, value in subelement.items():
+                    if attr == 'caption':
+                        newDocument['image_caption'] = value
+                    elif attr == 'url':
+                        newDocument['image_url'] = value
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'pricing':
+                pricing = self.process_riscos_xml_pricing_element(subelement)
+                newDocument['pricing'] = pricing
+            elif subelement.tag.lower() == 'authors':
+                authors = self.process_riscos_xml_authors_element(subelement)
+                newDocument['authors'] = authors   
+            elif subelement.tag in ['publisher','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag == 'territory':
+                print 'Territory: '+subelement.text
+                newDocument['territories'] = [subelement.text]
+            elif subelement.tag == 'published':
+                day = ""
+                month = ""
+                year = ""
+                for attr, value in subelement.items():
+                    if attr.lower() == 'day':
+                        day = value
+                    elif attr.lower() == 'month':
+                        month = value
+                    elif attr.lower() == 'year':
+                        year = value
+                    #endif
+                #endfor
+                print 'Date: '+year+'-'+month+'-'+day
+                secsSinceEpoch = time.mktime((int(year),int(month),int(day),0,0,0,0,0,0))
+                newDocument['date'] = secsSinceEpoch
+            elif subelement.tag.lower() == 'title':
+                print 'Title: '+subelement.text
+                newDocument['book'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef 
+
+    def process_riscos_xml_magazines_element(self, parent_url, magazinesElement, lastModified):
+        print 'Processing '+magazinesElement.tag+'...'
+        for subelement in magazinesElement.iterchildren():
+            print 'Processing tag: '+magazinesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'magazine':
+                self.process_riscos_xml_magazine_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+    #enddef
+    
+    def process_riscos_xml_magazine_element(self, parent_url, magazineElement, lastModified):
+        newDocument = {}       
+        print 'Processing '+magazineElement.tag+'...'
+        for subelement in magazineElement.iterchildren():
+            print 'Processing tag: '+magazineElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
             elif subelement.tag.lower() == 'description':
                 description = subelement.text
                 print 'Description: '+description
-            elif subelement.tag.lower() == 'developer':
-                developer = subelement.text
-                print 'Developer: '+developer
-            elif subelement.tag.lower() == 'directory':
-                directory = subelement.text
-                print 'Directory: '+directory
-            elif subelement.tag.lower() in ['license','licence']:
-                license = subelement.text
-                print 'License: '+license
-            elif subelement.tag.lower() == 'maintainer':
-                maintainer = subelement.text
-                print 'Maintainer: '+maintainer
-            elif subelement.tag.lower() == 'name':
-                name = subelement.text
-                print 'Name: '+name
-            elif subelement.tag.lower() == 'price':
-                currency = ""
+                newDocument['description'] = description
                 for attr, value in subelement.items():
-                    if attr == 'currency':
-                        currency = value
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
                     #endif
                 #endfor
-                price = subelement.text+currency
-                print 'Price: '+price
-            elif subelement.tag.lower() == 'programming_languages' or subelement.tag.lower() == 'programminglanguages':
-                programming_languages = subelement.text
-                print 'Programming languages: '+programming_languages
-            elif subelement.tag.lower() == 'purpose':
-                purpose = subelement.text
-                print 'Purpose: '+purpose
-            elif subelement.tag.lower() == 'system_variables' or subelement.tag.lower() == 'systemvariables':
-                system_variables = subelement.text
-                print 'System variables: '+system_variables
-            elif subelement.tag.lower() == 'territories':
-                territories = subelement.text
-                print 'Territories: '+territories
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
-            elif subelement.tag.lower() == 'version':
-                version = subelement.text
-                print 'Version: '+version
+            elif subelement.tag.lower() == 'issn':
+                print 'ISSN: '+subelement.text
+                newDocument['identifier'] = subelement.text
+            elif subelement.tag == 'pricing':
+                pricing = self.process_riscos_xml_pricing_element(subelement)
+                newDocument['pricing'] = pricing
+            elif subelement.tag == 'territory':
+                print 'Territory: '+subelement.text
+                newDocument['territories'] = [subelement.text]
+            elif subelement.tag.lower() == 'title':
+                print 'Title: '+subelement.text
+                newDocument['magazine'] = subelement.text
+            elif subelement.tag in ['publisher','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if name:
-            newDocument = {}
-            newDocument['application_name'] = name
-            newDocument['author'] = author
-            newDocument['copyright'] = copyright
-            newDocument['description'] = description
-            newDocument['license'] = license
-            newDocument['maintainer'] = maintainer
-            newDocument['date'] = date
-            newDocument['application_directory'] = directory
-            newDocument['price'] = price
-            newDocument['developer'] = developer
-            newDocument['application_version'] = version
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            if newDocument.has_key('territories'):
+                newDocument['territories'] = list(set(newDocument['territories']))
+            #endif
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
-    #enddef
-
-    def process_riscos_xml_fonts_element(self, parent_url, fontsElement):
-        print 'Processing '+fontsElement.tag+'...'
-        for subelement in fontsElement.iter():
-            if subelement.tag.lower() == 'font':
-                self.process_riscos_xml_font_element(parent_url, subelement)
+    #enddef 
+    
+    def process_riscos_xml_services_element(self, parent_url, servicesElement, lastModified):
+        print 'Processing '+servicesElement.tag+'...'
+        for subelement in servicesElement.iterchildren():
+            print 'Processing tag: '+servicesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'service':
+                self.process_riscos_xml_service_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef   
     
-    def process_riscos_xml_font_element(self, parent_url, fontElement):
-        epoch = int(time.time())
-        font = ""
-        url = ""
-        print 'Processing '+fontElement.tag+'...'
-        #xmlcode = etree.tostring(fontElement)
-        #print xmlcode
-        for subelement in fontElement.iter():
-            if subelement.tag.lower() == 'name':
-                font = subelement.text
-                print 'Font: '+font
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
+    def process_riscos_xml_service_element(self, parent_url, serviceElement, lastModified):
+        newDocument = {}
+        print 'Processing '+serviceElement.tag+'...'
+        for subelement in serviceElement.iterchildren():
+            print 'Processing tag: '+serviceElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
+            elif subelement.tag in ['address','category','email','telephone','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag.lower() == 'description':
+                print 'Description: '+subelement.text
+                newDocument['description'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor               
+            elif subelement.tag.lower() == 'name':
+                print 'Provider: '+subelement.text
+                newDocument['provider'] = subelement.text
+            elif subelement.tag.lower() == 'pricing':
+                pricing = self.process_riscos_xml_pricing_element(subelement)
+                newDocument['pricing'] = pricing
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if font and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['font'] = [font]
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
-    #enddef    
+    #enddef 
     
-    def process_riscos_xml_modules_element(self, parent_url, modulesElement):
+    def process_riscos_xml_absolutes_element(self, parent_url, absolutesElement, lastModified):
+        print 'Processing '+absolutesElement.tag+'...'
+        for subelement in absolutesElement.iterchildren():
+            print 'Processing tag: '+absolutesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'absolute':
+                self.process_riscos_xml_absolute_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+    #enddef
+
+    def process_riscos_xml_absolute_element(self, parent_url, absoluteElement, lastModified):
+        newDocument = {}
+        print 'Processing '+absoluteElement.tag+'...'
+        for subelement in absoluteElement.iterchildren():
+            print 'Processing tag: '+absoluteElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'name':
+                absolute = subelement.text
+                print 'Absolute: '+absolute
+                newDocument['absolutes'] = [absolute]
+            elif subelement.tag == 'url':
+                url = subelement.text
+                print 'URL: '+url
+                newDocument['url'] = url
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef
+    
+    def process_riscos_xml_apps_element(self, parent_url, appsElement, lastModified):
+        print 'Processing '+appsElement.tag+'...'
+        for subelement in appsElement.iterchildren():
+            print 'Processing tag: '+appsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'app':
+                self.process_riscos_xml_app_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+    #enddef
+
+    def process_riscos_xml_app_element(self, parent_url, appElement, lastModified):
+        newDocument = {}
+        print 'Processing '+appElement.tag+'...'
+        for subelement in appElement.iterchildren():
+            print 'Processing tag: '+appElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'addressingmode':
+                if subelement.text in ['26-bit','32-bit','26/32-bit']:
+                    print 'Addressing Mode: '+subelement.text
+                    newDocument['addressing_mode'] = subelement.text
+                #endif
+            elif subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
+            elif subelement.tag.lower() == 'arm_architectures':
+                arm_architectures = self.process_riscos_xml_arm_architectures_element(subelement)
+                newDocument['arm_architectures'] = arm_architectures
+            elif subelement.tag == 'authors':
+                authors = self.process_riscos_xml_authors_element(subelement)
+                newDocument['authors'] = authors   
+            elif subelement.tag.lower() in ['copyright','developer','directory','icon_url','identifier','licence','maintainer','purpose','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag == 'description':
+                print 'Description: '+subelement.text
+                newDocument['description'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'filetypesrun':
+                filetypes_run = self.process_riscos_xml_filetypes_run_element(subelement)
+                newDocument['filetypes_run'] = filetypes_run
+            elif subelement.tag.lower() == 'filetypesset':
+                filetypes_set = self.process_riscos_xml_filetypes_set_element(subelement)
+                newDocument['filetypes_set'] = filetypes_set
+            elif subelement.tag.lower() == 'iconurl':
+                print 'Icon URL: '+subelement.text
+                newDocument['icon_url'] = subelement.text
+            elif subelement.tag == 'image':    
+                for attr, value in subelement.items():
+                    if attr == 'caption':
+                        newDocument['image_caption'] = value
+                    elif attr == 'url':
+                        newDocument['image_url'] = value
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'keystages':
+                keyStages = self.process_riscos_xml_keystages_element(subelement)
+                newDocument['key_stages'] = keyStages
+            elif subelement.tag == 'released':
+                day = ""
+                month = ""
+                year = ""
+                for attr, value in subelement.items():
+                    if attr.lower() == 'day':
+                        day = value
+                    elif attr.lower() == 'month':
+                        month = value
+                    elif attr.lower() == 'year':
+                        year = value
+                    #endif
+                #endfor
+                print 'Released: '+year+'-'+month+'-'+day
+                secsSinceEpoch = time.mktime((int(year),int(month),int(day),0,0,0,0,0,0))
+                newDocument['date'] = secsSinceEpoch
+            elif subelement.tag.lower() == 'relocatablemodules':
+                relocatableModules = self.process_riscos_xml_embedded_relocatable_modules_element(subelement)
+                newDocument['relocatable_modules'] = relocatableModules
+            elif subelement.tag == 'name':
+                print 'Name: '+subelement.text
+                newDocument['application_name'] = subelement.text
+            elif subelement.tag.lower() == 'moduledependencies':
+                newDocument['module_dependencies'] = self.process_riscos_xml_module_dependencies_element(subelement)
+            elif subelement.tag == 'pricing':
+                newDocument['pricing'] = self.process_riscos_xml_pricing_element(subelement)
+            elif subelement.tag.lower() == 'programminglanguages':
+                newDocument['programming_languages'] = self.process_riscos_xml_programming_languages_element(subelement)
+            elif subelement.tag.lower() == 'systemvariables':
+                newDocument['system_variables'] = self.process_riscos_xml_system_variables_element(subelement)
+            elif subelement.tag == 'territories':
+                newDocument['territories'] = self.process_riscos_xml_territories_element(subelement)
+            elif subelement.tag == 'utilities':
+                newDocument['utilities'] = self.process_riscos_xml_embedded_utilities_element(subelement)
+            elif subelement.tag == 'version':
+                print 'Version: '+subelement.text
+                newDocument['application_version'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef
+
+    def process_riscos_xml_arm_architectures_element(self, armArchitecturesElement):
+        armArchitectures = []
+        for subelement in armArchitecturesElement.iterchildren():
+            print 'Processing tag: '+armArchitecturesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() in ['armv2','armv3','armv4','armv5','armv6','armv7']:
+                armArchitecture = subelement.tag
+                armArchitecture = armArchitecture.replace('arm','ARM')
+                armArchitectures.append(subelement.tag)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return armArchitectures
+    #enddef
+    
+    def process_riscos_xml_authors_element(self, authorsElement):
+        authors = []
+        for subelement in authorsElement.iterchildren():
+            if subelement.tag.lower() == 'author':
+                authors.append(subelement.text)
+            #endif
+        #endfor
+        return authors
+    #enddef
+    
+    def process_riscos_xml_module_dependencies_element(self, moduleDependenciesElement):
+        moduleDependencies = []
+        for subelement in moduleDependenciesElement.iterchildren():
+            print 'Processing tag: '+moduleDependenciesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'moduledependency':
+                moduleDependency = self.process_riscos_xml_module_dependency_element(subelement)
+                moduleDependencies.append(moduleDependency)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return moduleDependencies
+    #enddef
+    
+    def process_riscos_xml_module_dependency_element(self, moduleDependencyElement):
+        moduleDependency = {}
+        print 'Processing '+moduleDependencyElement.tag+'...'
+        for subelement in moduleDependencyElement.iterchildren():
+            print 'Processing tag: '+moduleDependencyElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'name':
+                print 'Name: '+subelement.text
+                moduleDependency['name'] = subelement.text
+            elif subelement.tag == 'version':
+                print 'Version: '+subelement.text
+                moduleDependency['version'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return moduleDependency   
+    #enddef
+    
+    def process_riscos_xml_embedded_relocatable_modules_element(self, relocatableModulesElement):
+        relocatableModules = []
+        for subelement in relocatableModulesElement.iterchildren():
+            print 'Processing tag: '+relocatableModulesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'relocatablemodule':
+                relocatableModule = self.process_riscos_xml_embedded_relocatable_module_element(subelement)
+                relocatableModules.append(relocatableModule)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return relocatableModules
+    #enddef
+    
+    def process_riscos_xml_embedded_relocatable_module_element(self, relocatableModuleElement):
+        relocatableModule = {}
+        print 'Processing '+relocatableModuleElement.tag+'...'
+        for subelement in relocatableModuleElement.iterchildren():
+            print 'Processing tag: '+relocatableModuleElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'name':
+                print 'Name: '+subelement.text
+                relocatableModule['name'] = subelement.text
+            elif subelement.tag.lower() == 'softwareinterrupts':
+                relocatableModule['software_interrupts'] = self.process_riscos_xml_software_interrupts_element(subelement)
+            elif subelement.tag.lower() == 'starcommands':
+                relocatableModule['star_commands'] = self.process_riscos_xml_star_commands_element(subelement)
+            elif subelement.tag == 'version':
+                print 'Version: '+subelement.text
+                relocatableModule['version'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return relocatableModule   
+    #enddef
+    
+    def process_riscos_xml_pricing_element(self, pricingElement):
+        pricing = []
+        for subelement in pricingElement.iterchildren():
+            print 'Processing tag: '+pricingElement.tag+' -> '+subelement.tag
+            currency = ""
+            duration = ""
+            upgradeFrom = ""
+            upgradeTo = ""
+            for attr, value in subelement.items():
+                if attr == 'currency':
+                    currency = value
+                elif attr == 'duration':
+                    duration = value
+                elif attr == 'from':
+                    upgradeFrom = value
+                elif attr == 'to':
+                    upgradeTo = value
+                #endif
+            #endfor
+            if subelement.tag.lower() == 'ebook':
+                pricing.append({'type':'ebook','currency':currency,'price':subelement.text})
+            elif subelement.tag.lower() == 'hardback':
+                pricing.append({'type':'hardback','currency':currency,'price':subelement.text})
+            elif subelement.tag.lower() == 'hourly':
+                pricing.append({'type':'hourly','currency':currency,'price':subelement.text})
+            elif subelement.tag.lower() == 'individual':
+                pricing.append({'type':'individual','currency':currency,'price':subelement.text})
+            elif subelement.tag.lower() == 'issue':
+                pricing.append({'type':'issue','currency':currency,'price':subelement.text})
+            elif subelement.tag.lower() == 'single':
+                pricing.append({'type':'single','currency':currency,'price':subelement.text})               
+            elif subelement.tag.lower() == 'singleuser':
+                pricing.append({'type':'singleuser','currency':currency,'price':subelement.text})            
+            elif subelement.tag.lower() == 'sitelicence':
+                pricing.append({'type':'sitelicence','currency':currency,'price':subelement.text})
+            elif subelement.tag.lower() == 'softback':
+                pricing.append({'type':'softback','currency':currency,'price':subelement.text})
+            elif subelement.tag.lower() == 'subscription':
+                if duration:
+                    pricing.append({'type':'subscription','currency':currency,'duration':duration,'price':subelement.text})
+                else:
+                    pricing.append({'type':'subscription','currency':currency,'price':subelement.text})
+                #endif
+            elif subelement.tag.lower() == 'upgrade':
+                pricing.append({'type':'upgrade','from':upgradeFrom,'to':upgradeTo,'currency':currency,'price':subelement.text})
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return pricing
+    #enddef
+    
+    def process_riscos_xml_programming_languages_element(self, programmingLanguagesElement):
+        programming_languages = []
+        for subelement in programmingLanguagesElement.iterchildren():
+            print 'Processing tag: '+programmingLanguagesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'programming_language':
+                programming_languages.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return programming_languages
+    #enddef
+    
+    def process_riscos_xml_system_variables_element(self, systemVariablesElement):
+        system_variables = []
+        for subelement in systemVariablesElement.iterchildren():
+            print 'Processing tag: '+systemVariablesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'systemvariable':
+                system_variables.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return system_variables
+    #enddef
+    
+    def process_riscos_xml_territories_element(self, territoriesElement):
+        territories = []
+        for subelement in territoriesElement.iterchildren():
+            print 'Processing tag: '+territoriesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'territory':
+                territories.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return territories
+    #enddef
+    
+    def process_riscos_xml_filetypes_run_element(self, parent_url, filetypesRunElement, lastModified):
+        filetypes_run = []
+        print 'Processing '+filetypesRunElement.tag+'...'
+        for subelement in filetypesRunElement.iterchildren():
+            print 'Processing tag: '+filetypesRunElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'filetyperun':
+                filetypes_run.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return filetypes_run
+    #enddef
+    
+    def process_riscos_xml_filetypes_set_element(self, parent_url, filetypesSetElement, lastModified):
+        filetypes_set = []
+        print 'Processing '+filetypesSetElement.tag+'...'
+        for subelement in filetypesSetElement.iterchildren():
+            print 'Processing tag: '+filetypesSetElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'filetypeset':
+                filetypes_set.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return filetypes_set
+    #enddef  
+    
+    def process_riscos_xml_fonts_element(self, parent_url, fontsElement, lastModified):
+        print 'Processing '+fontsElement.tag+'...'
+        for subelement in fontsElement.iterchildren():
+            print 'Processing tag: '+fontsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'font':
+                self.process_riscos_xml_font_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+    #enddef   
+    
+    def process_riscos_xml_font_element(self, parent_url, fontElement, lastModified):
+        newDocument = {}
+        print 'Processing '+fontElement.tag+'...'
+        for subelement in fontElement.iterchildren():
+            print 'Processing tag: '+fontElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'image':
+                for attr, value in subelement.items():
+                    if attr == 'caption':
+                        newDocument['image_caption'] = value
+                    elif attr == 'url':
+                        newDocument['image_url'] = value
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'name':
+                print 'Font: '+subelement.text
+                newDocument['font'] = [subelement.text]
+            elif subelement.tag.lower() == 'url':
+                print 'URL: '+subelement.text
+                newDocument['url'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef
+
+    def process_riscos_xml_keystages_element(self, keyStagesElement):
+        keyStages = []
+        print 'Processing '+keyStagesElement.tag+'...'
+        for subelement in keyStagesElement.iterchildren():
+            print 'Processing tag: '+keyStagesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'keystage':
+                keyStages.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return keyStages
+    #enddef
+
+    def process_riscos_xml_parameters_element(self, parametersElement):
+        parameters = []
+        for subelement in parametersElement.iterchildren():
+            print 'Processing tag: '+parametersElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'parameter':
+                parameter = {}
+                for attr, value in subelement.items():
+                    if attr == 'name':
+                        parameter['name'] = value
+                    elif attr == 'description':
+                        parameter['description'] = value
+                    #endif
+                #endfor
+                parameters.append(parameter)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return parameters
+    #enddef
+    
+    def process_riscos_xml_on_entry_element(self, onEntryElement):
+        onEntry = []
+        for subelement in onEntryElement.iterchildren():
+            print 'Processing tag: '+onEntryElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'register':
+                register = {}
+                for attr, value in subelement.items():
+                    if attr == 'number':
+                        register['number'] = value
+                    elif attr == 'description':
+                        register['description'] = value
+                    #endif
+                #endfor
+                onEntry.append(register)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return onEntry
+    #enddef
+    
+    def process_riscos_xml_on_exit_element(self, onExitElement):
+        onExit = []
+        for subelement in onExitElement.iterchildren():
+            print 'Processing tag: '+onExitElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'register':
+                register = {}
+                for attr, value in subelement.items():
+                    if attr == 'number':
+                        register['number'] = value
+                    elif attr == 'description':
+                        register['description'] = value
+                    #endif
+                #endfor
+                onExit.append(register)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return onExit
+    #enddef
+    
+    def process_riscos_xml_related_vectors_element(self, relatedVectorsElement):
+        relatedVectors = []
+        print 'Processing '+relatedVectorsElement.tag+'...'
+        for subelement in relatedVectorsElement.iterchildren():
+            print 'Processing tag: '+relatedVectorsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'relatedvector':
+                relatedVectors.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return relatedVectors
+    #enddef
+    
+    def process_riscos_xml_related_swis_element(self, relatedSwisElement):
+        relatedSwis = []
+        print 'Processing '+relatedSwisElement.tag+'...'
+        for subelement in relatedSwisElement.iterchildren():
+            print 'Processing tag: '+relatedSwisElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'relatedswi':
+                relatedSwis.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return relatedSwis
+    #enddef
+    
+    def process_riscos_xml_related_commands_element(self, relatedCommandsElement):
+        relatedCommands = []
+        print 'Processing '+relatedCommandsElement.tag+'...'
+        for subelement in relatedCommandsElement.iterchildren():
+            print 'Processing tag: '+relatedCommandsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'relatedcommand':
+                relatedCommands.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return relatedCommands
+    #enddef
+    
+    def process_riscos_xml_interrupts_element(self, interruptsElement):
+        interrupts = []
+        print 'Processing '+interruptsElement.tag+'...'
+        for subelement in interruptsElement.iterchildren():
+            print 'Processing tag: '+interruptsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'interrupt':
+                interrupts.append(subelement.text)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return interrupts
+    #enddef
+    
+    def process_riscos_xml_standalone_relocatable_modules_element(self, parent_url, modulesElement, lastModified):
         print 'Processing '+modulesElement.tag+'...'
-        for subelement in modulesElement.iter():
-            if subelement.tag.lower() in ['module','relocatablemodule'] or subelement.tag.lower() == 'relocatable_module':
-                self.process_riscos_xml_module_element(parent_url, subelement)
+        for subelement in modulesElement.iterchildren():
+            print 'Processing tag: '+modulesElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'relocatablemodule':
+                self.process_riscos_xml_standalone_relocatable_module_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef
     
-    def process_riscos_xml_module_element(self, parent_url, moduleElement):
-        epoch = int(time.time())
+    def process_riscos_xml_standalone_relocatable_module_element(self, parent_url, moduleElement, lastModified):
+        newDocument = {}
         addressingMode = ""
         module = ""
-        url = ""
+        softwareinterrupts = ""
+        star_commands = ""
         version = ""
         print 'Processing '+moduleElement.tag+'...'
-        #xmlcode = etree.tostring(moduleElement)
-        #print xmlcode
-        for subelement in moduleElement.iter():
-            if subelement.tag.lower() == 'addressing_mode':
+        for subelement in moduleElement.iterchildren():
+            print 'Processing tag: '+moduleElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'addressingmode':
                 addressingMode = subelement.text
                 print 'Addressing mode: '+addressingMode
             elif subelement.tag.lower() == 'name':
                 module = subelement.text
                 print 'Module: '+module
+            elif subelement.tag.lower() == 'softwareinterrupts':
+                softwareinterrupts = self.process_riscos_xml_software_interrupts_element(subelement)
+            elif subelement.tag.lower() == 'starcommands':
+                star_commands = self.process_riscos_xml_star_commands_element(subelement)
             elif subelement.tag.lower() == 'url':
                 url = subelement.text
                 print 'URL: '+url
+                newDocument['url'] = url
             elif subelement.tag.lower() == 'version':
                 version = subelement.text
                 print 'Version: '+version
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if module and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
+        if module:
             subDocument = {}
             subDocument['name'] = module
+            if softwareinterrupts:
+                subDocument['software_interrupts'] = softwareinterrupts
+            #endif
+            if star_commands:
+                subDocument['star_commands'] = star_commands
+            #endif
             if version:
                 subDocument['version'] = version
             #endif
@@ -2347,282 +3089,501 @@ class riscosspider:
                 subDocument['addressing_mode'] = addressingMode
             #endif
             newDocument['relocatable_modules'] = [subDocument]
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
     #enddef
     
-    def process_riscos_xml_monitor_definition_files_element(self, parent_url, monitorDefinitionFilesElement):
+    def process_riscos_xml_software_interrupts_element(self, softwareinterruptsElement):
+        softwareinterrupts = []
+        print 'Processing '+softwareinterruptsElement.tag+'...'
+        for subelement in softwareinterruptsElement.iterchildren():
+            print 'Processing tag: '+softwareinterruptsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'softwareinterrupt':
+                softwareinterrupt = self.process_riscos_xml_software_interrupt_element(subelement)
+                softwareinterrupts.append(softwareinterrupt)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return softwareinterrupts      
+    #enddef
+    
+    def process_riscos_xml_software_interrupt_element(self, softwareinterruptElement):
+        softwareinterrupt = {}
+        print 'Processing '+softwareinterruptElement.tag+'...'
+        for subelement in softwareinterruptElement.iterchildren():
+            print 'Processing tag: '+softwareinterruptElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'hexnumber':
+                print 'Hex Number: '+subelement.text
+                softwareinterrupt['hex_number'] = subelement.text
+            elif subelement.tag == 'interrupts':
+                interrupts = self.process_riscos_xml_interrupts_element(subelement)
+                softwareinterrupt['interrupts'] = interrupts
+            elif subelement.tag == 'name':
+                print 'Software Interrupt: '+subelement.text
+                softwareinterrupt['name'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'reasoncode':
+                        softwareinterrupt['reason_code'] = value
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'onentry':
+                onEntry = self.process_riscos_xml_on_entry_element(subelement)
+                softwareinterrupt['on_entry'] = onEntry
+            elif subelement.tag.lower() == 'onexit':
+                onExit = self.process_riscos_xml_on_exit_element(subelement)
+                softwareinterrupt['on_exit'] = onExit
+            elif subelement.tag.lower() == 'processormode':
+                print 'Processor Mode: '+subelement.text
+                softwareinterrupt['processor_mode'] = subelement.text
+            elif subelement.tag.lower() == 'reasoncode':
+                print 'Reason Code: '+subelement.text
+                softwareinterrupt['reason_code'] = subelement.text
+            elif subelement.tag.lower() == 'reentrancy':
+                print 'Re-entrancy: '+subelement.text
+                softwareinterrupt['re_entrancy'] = subelement.text
+            elif subelement.tag.lower() == 'relatedswis':
+                relatedSwis = self.process_riscos_xml_related_swis_element(subelement)
+                softwareinterrupt['related_swis'] = relatedSwis
+            elif subelement.tag.lower() == 'relatedvectors':
+                relatedVectors = self.process_riscos_xml_related_vectors_element(subelement)
+                softwareinterrupt['related_vectors'] = relatedVectors
+            elif subelement.tag.lower() == 'summary':
+                print 'Summary: '+subelement.text
+                softwareinterrupt['summary'] = subelement.text
+            elif subelement.tag == 'use':
+                print 'Use: '+subelement.text
+                softwareinterrupt['use'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return softwareinterrupt    
+    #enddef
+    
+    def process_riscos_xml_star_commands_element(self, starcommandsElement):
+        starcommands = []
+        print 'Processing '+starcommandsElement.tag+'...'
+        for subelement in starcommandsElement.iterchildren():
+            print 'Processing tag: '+starcommandsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'starcommand':
+                starcommand = self.process_riscos_xml_star_command_element(subelement)
+                starcommands.append(starcommand)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return starcommands     
+    #enddef
+    
+    def process_riscos_xml_star_command_element(self, starcommandElement):
+        newDocument = {}
+        print 'Processing '+starcommandElement.tag+'...'
+        for subelement in starcommandElement.iterchildren():
+            print 'Processing tag: '+starcommandElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'example':
+                print 'Example: '+subelement.text
+                newDocument['example'] = subelement.text
+            elif subelement.tag.lower() == 'name':
+                print 'Star Command: '+subelement.text
+                newDocument['name'] = subelement.text
+            elif subelement.tag == 'parameters':
+                parameters = self.process_riscos_xml_parameters_element(subelement)
+                newDocument['parameters'] = parameters
+            elif subelement.tag.lower() == 'relatedcommands':
+                relatedCommands = self.process_riscos_xml_related_commands_element(subelement)
+                newDocument['related_commands'] = relatedCommands
+            elif subelement.tag == 'summary':
+                print 'Summary: '+subelement.text
+                newDocument['summary'] = subelement.text
+            elif subelement.tag == 'syntax':
+                print 'Syntax: '+subelement.text
+                newDocument['syntax'] = subelement.text
+            elif subelement.tag == 'use':
+                print 'Use: '+subelement.text
+                newDocument['use'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return newDocument
+    #enddef
+    
+    def process_riscos_xml_monitor_definition_files_element(self, parent_url, monitorDefinitionFilesElement, lastModified):
         print 'Processing '+monitorDefinitionFilesElement.tag+'...'
-        for subelement in monitorDefinitionFilesElement.iter():
+        for subelement in monitorDefinitionFilesElement.iterchildren():
+            print 'Processing tag: '+monitorDefinitionFilesElement.tag+' -> '+subelement.tag
             if subelement.tag.lower() in ['monitordefinitionfile','monitor_definition_file','mdf']:
-                self.process_riscos_xml_monitor_definition_file_element(parent_url, subelement)
+                self.process_riscos_xml_monitor_definition_file_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef
     
-    def process_riscos_xml_monitor_definition_file_element(self, parent_url, monitorDefinitionFileElement):
-        epoch = int(time.time())
-        monitor = ""
-        url = ""
+    def process_riscos_xml_monitor_definition_file_element(self, parent_url, monitorDefinitionFileElement, lastModified):
+        newDocument = {}
         print 'Processing '+monitorDefinitionFileElement.tag+'...'
-        #xmlcode = etree.tostring(monitorDefinitionFileElement)
-        #print xmlcode
-        for subelement in monitorDefinitionFileElement.iter():
+        for subelement in monitorDefinitionFileElement.iterchildren():
+            print 'Processing tag: '+monitorDefinitionFileElement.tag+' -> '+subelement.tag
             if subelement.tag.lower() == 'monitor':
                 monitor = subelement.text
                 print 'Monitor: '+monitor
+                newDocument['monitor_definition_files'] = [monitor]
             elif subelement.tag.lower() == 'url':
                 url = subelement.text
                 print 'URL: '+url
+                newDocument['url'] = url
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
         if monitor and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['monitor_definition_files'] = [monitor]
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
     #enddef
     
-    def process_riscos_xml_printer_definition_files_element(self, parent_url, printerDefinitionFilesElement):
+    def process_riscos_xml_printer_definition_files_element(self, parent_url, printerDefinitionFilesElement, lastModified):
         print 'Processing '+printerDefinitionFilesElement.tag+'...'
-        for subelement in printerDefinitionFilesElement.iter():
+        for subelement in printerDefinitionFilesElement.iterchildren():
+            print 'Processing tag: '+printerDefinitionFilesElement.tag+' -> '+subelement.tag
             if subelement.tag.lower() in ['printer_definition_file','printerdefinitionfile','pdf']:
-                self.process_riscos_xml_printer_definition_file_element(parent_url, subelement)
+                self.process_riscos_xml_printer_definition_file_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor         
     #enddef
     
-    def process_riscos_xml_printer_definition_file_element(self, parent_url, printerDefinitionFileElement):
-        epoch = int(time.time())
-        printer = ""
-        url = ""
+    def process_riscos_xml_printer_definition_file_element(self, parent_url, printerDefinitionFileElement, lastModified):
+        newDocument = {}
         print 'Processing '+printerDefinitionFileElement.tag+'...'
-        #xmlcode = etree.tostring(printerDefinitionFileElement)
-        #print xmlcode
-        for subelement in printerDefinitionFileElement.iter():
+        for subelement in printerDefinitionFileElement.iterchildren():
+            print 'Processing tag: '+printerDefinitionFileElement.tag+' -> '+subelement.tag
             if subelement.tag.lower() == 'printer':
                 printer = subelement.text
                 print 'Printer: '+printer
+                newDocument['printer_definition_files'] = [printer]
             elif subelement.tag.lower() == 'url':
                 url = subelement.text
                 print 'URL: '+url
+                newDocument['url'] = url
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if printer and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['printer_definition_files'] = [printer]
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
     #enddef
 
-    def process_riscos_xml_utilities_element(self, parent_url, utilitiesElement):
+    def process_riscos_xml_standalone_utilities_element(self, parent_url, utilitiesElement, lastModified):
         print 'Processing '+utilitiesElement.tag+'...'
-        for subelement in utilitiesElement.iter():
+        for subelement in utilitiesElement.iterchildren():
+            print 'Processing tag: '+utilitiesElement.tag+' -> '+subelement.tag
             if subelement.tag.lower() == 'utility':
-                self.process_riscos_xml_utility_element(parent_url, subelement)
+                self.process_riscos_xml_standalone_utility_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef
 
-    def process_riscos_xml_utility_element(self, parent_url, utilityElement):
-        epoch = int(time.time())
-        utility = ""
-        url = ""
-        version = ""
+    def process_riscos_xml_standalone_utility_element(self, parent_url, utilityElement, lastModified):
+        newDocument = {}
+        utility = {}
         print 'Processing '+utilityElement.tag+'...'
-        #xmlcode = etree.tostring(utilityElement)
-        #print xmlcode
-        for subelement in utilityElement.iter():
-            if subelement.tag.lower() == 'name':
-                utility = subelement.text
-                print 'Utility: '+utility
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
-            elif subelement.tag.lower() == 'version':
-                version = subelement.text
-                print 'Version: '+version
+        for subelement in utilityElement.iterchildren():
+            print 'Processing tag: '+utilityElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'name':
+                print 'Utility: '+subelement.text
+                utility['name'] = subelement.text
+            elif subelement.tag == 'syntax':
+                print 'Syntax: '+subelement.text
+                utility['syntax'] = subelement.text
+            elif subelement.tag == 'url':
+                print 'URL: '+subelement.text
+                newDocument['url'] = subelement.text
+            elif subelement.tag == 'version':
+                print 'Version: '+subelement.text
+                utility['version'] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if utility and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            if version:
-                newDocument['utilities'] = [{'name':utility,'version':version}]
-            else:
-                newDocument['utilities'] = [{'name':utility}]
-            #endif
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if utility:
+            newDocument['utilities'] = [utility]
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
     #enddef    
     
-    def process_riscos_xml_glossary_element(self, parent_url, glossaryElement):
+    def process_riscos_xml_embedded_utilities_element(self, parent_url, utilitiesElement, lastModified):
+        utilities = []
+        print 'Processing '+utilitiesElement.tag+'...'
+        for utilityElement in utilitiesElement.iterchildren():
+            print 'Processing tag: '+utilitiesElement.tag+' -> '+utilityElement.tag
+            if utilityElement.tag == 'utility':
+                utility = {}
+                print 'Processing '+utilityElement.tag+'...'
+                for subelement in utilityElement.iterchildren():
+                    print 'Processing tag: '+utilityElement.tag+' -> '+subelement.tag
+                    if subelement.tag == 'name':
+                        print 'Utility: '+subelement.text
+                        utility['name'] = subelement.text
+                    elif subelement.tag == 'syntax':
+                        print 'Syntax: '+subelement.text
+                        utility['syntax'] = subelement.text
+                    elif subelement.tag == 'version':
+                        print 'Version: '+subelement.text
+                        utility['version'] = subelement.text
+                    else:
+                        print "Unknown riscos.xml code: "+etree.tostring(subelement)
+                    #endif
+                #endfor
+                if utility.has_key('name') and utility['name']:
+                    utilities.append(utility)
+                #endif
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
+            #endif
+        #endfor
+        return utilities
+    #enddef
+
+    def process_riscos_xml_glossary_element(self, parent_url, glossaryElement, lastModified):
         print 'Processing '+glossaryElement.tag+'...'
-        #xmlcode = etree.tostring(glossaryElement)
-        #print xmlcode
-        for subelement in glossaryElement.iter():
+        for subelement in glossaryElement.iterchildren():
+            print 'Processing tag: '+glossaryElement.tag+' -> '+subelement.tag
             if subelement.tag.lower() == 'entry':
-                self.process_riscos_xml_entry_element(parent_url, subelement)
+                self.process_riscos_xml_entry_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef
 
-    def process_riscos_xml_entry_element(self, parent_url, entryElement):
-        epoch = int(time.time())
+    def process_riscos_xml_entry_element(self, parent_url, entryElement, lastModified):
+        newDocument = {}
         term = ""
         definition = ""
-        image_url = ""
-        image_caption = ""
         print 'Processing '+entryElement.tag+'...'
-        #xmlcode = etree.tostring(entryElement)
-        #print xmlcode
-        for subelement in entryElement.iter():
+        for subelement in entryElement.iterchildren():
+            print 'Processing tag: '+entryElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'image':
+                for attr, value in subelement.items():
+                    if attr == 'caption':
+                        newDocument['image_caption'] = value
+                    elif attr == 'url':
+                        newDocument['image_url'] = value
+                    #endif
+                #endfor
+            elif subelement.tag.lower() == 'sourcecode':
+                newDocument['source_code'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr.lower() == 'programminglanguage':
+                        newDocument['programming_languages'] = [value]
+                    #endif
+                #endfor
             if subelement.tag.lower() == 'term':
                 term = subelement.text
                 print 'Term: '+term
+                newDocument['glossary_term'] = term
             elif subelement.tag.lower() == 'definition':
                 definition = subelement.text
                 print 'Definition: '+definition
-            elif subelement.tag.lower() == 'image':
+                newDocument['glossary_definition'] = definition
                 for attr, value in subelement.items():
-                    if attr == 'caption':
-                        image_caption = value
-                    elif attr == 'url':
-                        image_url = value
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
                     #endif
-                #endfor          
+                #endfor
+            
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)                
             #endif
         #endfor
         if term and definition:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['parent_url'] = parent_url
-            newDocument['glossary_term'] = term
-            newDocument['glossary_definition'] = definition
-            newDocument['glossary_image_url'] = image_url
-            newDocument['glossary_image_caption'] = image_caption
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
     #enddef
 
-    def process_riscos_xml_usergroups_element(self, parent_url, usergroupsElement):
+    def process_riscos_xml_usergroups_element(self, parent_url, usergroupsElement, lastModified):
         print 'Processing '+usergroupsElement.tag+'...'
-        for subelement in usergroupsElement.iter():
-            if subelement.tag.lower() in ['usergroup','user_group']:
-                self.process_riscos_xml_usergroup_element(parent_url, subelement)
+        for subelement in usergroupsElement.iterchildren():
+            print 'Processing tag: '+usergroupsElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'usergroup':
+                self.process_riscos_xml_usergroup_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef   
     
-    def process_riscos_xml_usergroup_element(self, parent_url, usergroupElement):
-        epoch = int(time.time())
-        usergroup = ""
-        address = ""
-        description = ""
-        email = ""
-        telephone = ""
-        url = ""
-        print 'Processing '+fontElement.tag+'...'
-        #xmlcode = etree.tostring(fontElement)
-        #print xmlcode
-        for subelement in fontElement.iter():
-            if subelement.tag.lower() == 'address':
-                address = subelement.text
-                print 'Address: '+address
-            elif subelement.tag.lower() == 'description':
+    def process_riscos_xml_usergroup_element(self, parent_url, usergroupElement, lastModified):
+        newDocument = {}
+        print 'Processing '+usergroupElement.tag+'...'
+        for subelement in usergroupElement.iterchildren():
+            print 'Processing tag: '+usergroupElement.tag+' -> '+subelement.tag
+            if subelement.tag.lower() == 'adverturl':
+                print 'Advert URL: '+subelement.text
+                newDocument['advert_url'] = subelement.text
+            elif subelement.tag in ['address','contact','email','telephone','url']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            elif subelement.tag == 'description':
                 description = subelement.text
                 print 'Description: '+description
-            elif subelement.tag.lower() == 'email':
-                email = subelement.text
-                print 'Email: '+email    
-            elif subelement.tag.lower() == 'name':
+                newDocument['description'] = description
+                for attr, value in subelement.items():
+                    if attr.lower() == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor
+            elif subelement.tag == 'name':
                 usergroup = subelement.text
                 print 'User group: '+usergroup
-            elif subelement.tag.lower() == 'telephone':
-                telephone = subelement.text
-                print 'Telephone: '+telephone
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
+                newDocument['user_group'] = usergroup
+            elif subelement.tag == 'pricing':
+                pricing = self.process_riscos_xml_pricing_element(subelement)
+                newDocument['pricing'] = pricing
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if usergroup:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['user_group'] = usergroup
-            newDocument['address'] = address
-            newDocument['description'] = description
-            newDocument['email'] = email
-            newDocument['telephone'] = telephone
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
         #endif
     #enddef 
 
-    def process_riscos_xml_videos_element(self, parent_url, videosElement):
+    def process_riscos_xml_videos_element(self, parent_url, videosElement, lastModified):
         print 'Processing '+videosElement.tag+'...'
-        for subelement in videosElement.iter():
-            if subelement.tag.lower() == 'video':
-                self.process_riscos_xml_video_element(parent_url, subelement)
+        for subelement in videosElement.iterchildren():
+            print 'Processing tag: '+videosElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'video':
+                self.process_riscos_xml_video_element(parent_url, subelement, lastModified)
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
     #enddef   
     
-    def process_riscos_xml_video_element(self, parent_url, videoElement):
-        epoch = int(time.time())
-        video = ""
-        description = ""
-        url = ""
+    def process_riscos_xml_video_element(self, parent_url, videoElement, lastModified):
+        newDocument = {}
         print 'Processing '+videoElement.tag+'...'
-        #xmlcode = etree.tostring(videoElement)
-        #print xmlcode
-        for subelement in videoElement.iter():
-            if subelement.tag.lower() == 'description':
-                description = subelement.text
-                print 'Description: '+description   
-            elif subelement.tag.lower() == 'title':
-                video = subelement.text
-                print 'Video: '+video
-            elif subelement.tag.lower() == 'url':
-                url = subelement.text
-                print 'URL: '+url
+        for subelement in videoElement.iterchildren():
+            print 'Processing tag: '+videoElement.tag+' -> '+subelement.tag
+            if subelement.tag == 'description':
+                print 'Description: '+subelement.text
+                newDocument['description'] = subelement.text
+                for attr, value in subelement.items():
+                    if attr == 'territory':
+                        newDocument['territories'] = [value]
+                    #endif
+                #endfor                
+            elif subelement.tag == 'title':
+                print 'Video: '+subelement.text
+                newDocument['video'] = subelement.text
+            elif subelement.tag in ['height','url','width']:
+                print subelement.tag.capitalize()+': '+subelement.text
+                newDocument[subelement.tag] = subelement.text
+            else:
+                print "Unknown riscos.xml code: "+etree.tostring(subelement)
             #endif
         #endfor
-        if video and url:
-            newDocument = {}
-            newDocument['riscos_xml'] = parent_url
-            newDocument['url'] = url
-            newDocument['parent_url'] = parent_url
-            newDocument['video'] = video
-            newDocument['description'] = description
-            newDocument['last_scanned'] = epoch
-            newDocument['next_scan'] = epoch + self.periodMonth
-            self.riscosCollection.insert(newDocument)
+        if newDocument:
+            self.insert_riscos_xml_record_with_housekeeping(newDocument, parent_url, lastModified)
+        #endif
+    #enddef
+    
+    def insert_riscos_xml_record_with_housekeeping(self, newDocument, parent_url, lastModified):
+        epoch = int(time.time())
+        newDocument['riscos_xml'] = parent_url
+        newDocument['parent_url'] = parent_url
+        if not newDocument.has_key('date') or not newDocument['date']:
+            if lastModified:
+                newDocument['date'] = lastModified
+            #endif
+        #endif
+        newDocument['last_scanned'] = epoch
+        newDocument['next_scan'] = epoch + self.periodMonth
+        self.riscosCollection.insert(newDocument)
+    #enddef
+    
+    def analyse_atom_feed(self, url, data):
+        for atomFeedDocument in self.riscosCollection.find({'parent_url':url}):
+            print 'Removing atom feed entry for '+atomFeedDocument['parent_url']+'...'
+            self.riscosCollection.remove({'_id':ObjectId(atomFeedDocument['_id'])})
+        #endfor
+        if re.search('<feed(.*?)</feed>',data):
+            epoch = int(time.time())
+            iconUrl = ""
+            print "feed tag found..."
+            xmlCode = etree.XML(data)
+            for subElement in xmlCode.iterchildren():
+                if subElement.tag == 'entry':
+                    link = ""
+                    summary = ""
+                    title = ""
+                    updated = ""
+                    for entryElement in subElement.iterchildren():
+                        if entryElement.tag == 'link':
+                            for attr, value in entryElement.items():
+                                if attr.lower() == 'href':
+                                    link = value
+                                #endif
+                            #endfor       
+                        elif entryElement.tag == 'summary':
+                            summary = entryElement.text
+                            #summary = summary.replace('&lt;','<')
+                            #summary = summary.replace('&gt;','>')
+                            summary = summary.replace('<p>','<p align="left">')
+                        elif entryElement.tag == 'title':
+                            title = entryElement.text
+                        elif entryElement.tag == 'updated':
+                            updated = entryElement.text
+                        #endif
+                    #endfor
+                    if self.content_riscos_related(title) or self.content_riscos_related(summary):
+                        print 'Adding new ATOM entry...'
+                        newDocument = {}
+                        newDocument['syndicated_feed_item_title'] = title
+                        newDocument['syndicated_feed_item_description'] = summary
+                        if iconUrl:
+                            newDocument['icon_url'] = iconUrl
+                        #endif
+                        if link:
+                            if not self.url_in_a_collection(link) and not self.suspended_url(link) and not self.blacklisted_url(link):
+                                self.insert_url_into_urls(link, "", 0, epoch, False, False, False)
+                            #endif
+                            newDocument['url'] = link
+                        #endif
+                        newDocument['parent_url'] = url
+                        newDocument['syndicated_feed'] = url
+                        newDocument['last_scanned'] = epoch
+                        if updated:
+                            newDocument['date'] = updated
+                        else:
+                            newDocument['date'] = epoch
+                        #endif
+                        newDocument['next_scan'] = epoch + self.periodWeek
+                        print "Inserting into riscos: "+title
+                        if newDocument.has_key('strike'):
+                            del newDocument['strike']
+                        #endif
+                        self.riscosCollection.insert(newDocument)
+                    #endif
+                elif subElement.tag == 'logo':
+                    iconUrl = subElement.text
+                #endif
+            #endfor
         #endif
     #enddef
     
     def analyse_rss_feed(self, url, data):
+        for rssFeedDocument in self.riscosCollection.find({'parent_url':url}):
+            print 'Removing rss feed entry for '+rssFeedDocument['parent_url']+'...'
+            self.riscosCollection.remove({'_id':ObjectId(rssFeedDocument['_id'])})
+        #endfor  
         epoch = int(time.time())
         data = data.replace('\n','')
         data = data.replace('\r','')
@@ -2631,40 +3592,62 @@ class riscosspider:
             itemPattern = re.compile('<item>(.*?)</item>')
             titlePattern = re.compile('<title>(.*?)</title>')
             linkPattern = re.compile('<link>(.*?)</link>')
+            pubDatePattern = re.compile('<pubDate>.*?\s(\d\d)\s([A-Z][a-z][a-z])\s(\d{4})\s.*?</pubDate>')
             descriptionPattern = re.compile('<description>(.*?)</description>')
             channels = channelPattern.findall(data)
             for channel in channels:
                 itemResults = itemPattern.findall(channel)
                 if itemResults:
                     for itemResult in itemResults:
+                        title = ""
+                        description = ""
+                        link = ""
+                        publicationDate = ""
                         titleResults = titlePattern.findall(itemResult)
+                        if titleResults:
+                            title = titleResults[0]
+                        #endif
                         linkResults = linkPattern.findall(itemResult)
+                        if linkResults:
+                            link = linkResults[0]
+                        #endif                        
                         descriptionResults = descriptionPattern.findall(itemResult)
-                        if titleResults and linkResults:
+                        if descriptionResults:
+                            description = descriptionResults[0]
+                            description = description.replace('&lt;','<')
+                            description = description.replace('&gt;','>')
+                            description = description.replace('<p>','<p align="left">')
+                        #endif
+
+                        pubDateResults = pubDatePattern.findall(itemResult)
+                        if pubDateResults:
+                            day = int(pubDateResults[0][0])                          
+                            month = self.months.index(pubDateResults[0][1])+1
+                            year = int(pubDateResults[0][2])
+                            publicationDate = time.mktime((int(year),int(month),int(day),0,0,0,0,0,0))
+                        #endif
+                        
+                        if title and (self.content_riscos_related(title) or self.content_riscos_related(description)):
                             newDocument = {}
-                            newDocument['url'] = url
-                            newDocument['rss_feed'] = url
-                            newDocument['rss_feed_item_date'] = epoch
-                            newDocument['rss_feed_item_title'] = titleResults[0]
-                            if descriptionResults:
-                                newDocument['rss_feed_item_description'] = descriptionResults[0]
+                            newDocument['parent_url'] = url
+                            newDocument['syndicated_feed'] = url
+                            if publicationDate:
+                                newDocument['date'] = publicationDate
+                            else:
+                                newDocument['date'] = epoch
                             #endif
-                            newDocument['rss_feed_item_link'] = linkResults[0]
+                            newDocument['syndicated_feed_item_title'] = title
+                            if description:
+                                newDocument['syndicated_feed_item_description'] = description
+                            #endif
+                            if link:
+                                newDocument['url'] = link
+                            #endif
                             newDocument['last_scanned'] = epoch
-                            newDocument['next_scan'] = epoch + self.periodMonth
+                            newDocument['next_scan'] = epoch + self.periodWeek
                             self.riscosCollection.insert(newDocument)
-                            if not self.url_in_riscos(linkResults[0]) and not self.url_in_urls(linkResults[0]) and not self.url_in_rejects(linkResults[0]) and not self.url_in_reserves(linkResults[0]) and not self.suspended_url(linkResults[0]) and not self.blacklisted_url(linkResults[0]):
-                                newDocument = {}
-                                newDocument['url'] = linkResults[0]
-                                if linkResults[0].lower().endswith('.zip') or linkResults[0].lower().__contains__('.zip?'):
-                                    newDocument['zip_file'] = linkResults[0]
-                                    newDocument['last_scanned'] = 0
-                                else:
-                                    newDocument['last_scanned'] = 1
-                                #endif
-                                newDocument['next_scan'] = epoch
-                                self.urlsCollection.insert(newDocument)
-                                print "Inserting into urls: "+newDocument['url']                      
+                            if not self.url_in_a_collection(linkResults[0]) and not self.suspended_url(linkResults[0]) and not self.blacklisted_url(linkResults[0]):
+                                self.insert_url_into_urls(linkResults[0], "", 0, epoch, False, False, False)                 
                             #endif
                             print "Inserting into riscos: "+titleResults[0]
                         #endif
@@ -2678,7 +3661,7 @@ class riscosspider:
         valid = True
         if document['domain'] == 'www.ebay.co.uk':
             if document.has_key('page_title') and document['page_title']:
-                if not self.page_riscos_related(document['page_title']):
+                if not self.content_riscos_related(document['page_title']):
                     valid = False
                 #endif
             #endif
@@ -2715,23 +3698,23 @@ class riscosspider:
         return valid
     #enddef
     
-    def page_riscos_related(self, data):
-        pageRiscosRelated = False
+    def content_riscos_related(self, data):
+        contentRiscosRelated = False
         for searchTerm in ['RISC OS','RISC&nbsp;OS','RISC-OS','RISCOS','RiscOS','risc os','risc-os','riscos','Archimedes','RiscPC','Qercus','Iyonix','Risc PC','Acorn Computer','riscpkg']:
             if data.__contains__(searchTerm):
-                pageRiscosRelated = True
+                contentRiscosRelated = True
                 break
             #endif
         #endfor
-        return pageRiscosRelated
+        return contentRiscosRelated
     #enddef
     
     def update_apps(self, url, document, apps):
         epoch = int(time.time())
-        for [absolutes,appDate,appDir,appName,appVer,author,categories,copyright,description,dtpFormats,filetypesRead,filetypesSet,fonts,help,license,maintainer,minOsVers,monitorDefinitionFiles,packageName,packageSection,packageVersion,printerDefinitionFiles,priority,programmingLanguages,relocatableModules,relocatableModulesDependantUpon,source,territories,starCommands,systemVariables,toolboxRequired,utilities] in apps:
+        for [absolutes,appDate,appDir,appName,appVer,armArchitectures,author,categories,copyright,description,dtpFormats,filetypesRun,filetypesSet,fonts,help,licence,maintainer,monitorDefinitionFiles,packageName,packageSection,packageVersion,printerDefinitionFiles,priority,programmingLanguages,relocatableModules,relocatableModulesDependantUpon,riscOsVers,source,territories,systemVariables,toolboxRequired,utilities] in apps:
             existingDocument = ""
             if appDir:
-                existingDocument = self.riscosCollection.find_one({'url':url,'application_directory':appDir})
+                existingDocument = self.riscosCollection.find_one({'url':url,'directory':appDir})
             #endif
             if existingDocument:
                 existingDocument['zip_file'] = url
@@ -2749,8 +3732,11 @@ class riscosspider:
                 if appVer:
                     existingDocument['application_version'] = appVer
                 #endif
+                if armArchitectures:
+                    existingDocument['arm_architectures'] = armArchitectures
+                #endif
                 if author:
-                    existingDocument['author'] = author
+                    existingDocument['authors'] = [author]
                 #endif
                 if categories:
                     existingDocument['categories'] = categories
@@ -2764,8 +3750,8 @@ class riscosspider:
                 if dtpFormats:
                     existingDocument['dtp_formats'] = dtpFormats
                 #endif
-                if filetypesRead:
-                    existingDocument['filetypes_read'] = filetypesRead
+                if filetypesRun:
+                    existingDocument['filetypes_run'] = filetypesRun
                 #endif
                 if filetypesSet:
                     existingDocument['filetypes_set'] = filetypesSet
@@ -2779,14 +3765,11 @@ class riscosspider:
                     except:
                         True
                 #endif
-                if license:
-                    existingDocument['license'] = license
+                if licence:
+                    existingDocument['licence'] = licence
                 #endif
                 if maintainer:
                     existingDocument['maintainer'] = maintainer
-                #endif
-                if minOsVers:
-                    existingDocument['minimum_riscos_versions'] = minOsVers
                 #endif
                 if monitorDefinitionFiles:
                     existingDocument['monitor_definition_files'] = monitorDefinitionFiles
@@ -2813,16 +3796,16 @@ class riscosspider:
                     existingDocument['relocatable_modules'] = relocatableModules
                 #endif
                 if relocatableModulesDependantUpon:
-                    existingDocument['relocatable_modules_dependant_upon'] = relocatableModulesDependantUpon
+                    existingDocument['module_dependencies'] = relocatableModulesDependantUpon
+                #endif
+                if riscOsVers:
+                    existingDocument['riscos_versions'] = riscOsVers
                 #endif
                 if source:
                     existingDocument['source'] = source
                 #endif          
                 if territories:
                     existingDocument['territories'] = list(set(territories))
-                #endif
-                if starCommands:
-                    existingDocument['star_commands'] = starCommands
                 #endif
                 if systemVariables:
                     existingDocument['system_variables'] = systemVariables
@@ -2853,7 +3836,7 @@ class riscosspider:
                     subDocument['date'] = appDate
                 #endif
                 if appDir:
-                    subDocument['application_directory'] = appDir
+                    subDocument['directory'] = appDir
                 #endif
                 if appName and appName != 'ProgInfo':
                     subDocument['application_name'] = appName
@@ -2861,8 +3844,11 @@ class riscosspider:
                 if appVer:
                     subDocument['application_version'] = appVer
                 #endif
+                if armArchitectures:
+                    existingDocument['arm_architectures'] = armArchitectures
+                #endif
                 if author:
-                    subDocument['author'] = author
+                    subDocument['authors'] = [author]
                 #endif
                 if categories:
                     subDocument['categories'] = categories
@@ -2876,8 +3862,8 @@ class riscosspider:
                 if dtpFormats:
                     subDocument['dtp_formats'] = dtpFormats
                 #endif
-                if filetypesRead:
-                    subDocument['filetypes_read'] = filetypesRead
+                if filetypesRun:
+                    subDocument['filetypes_run'] = filetypesRun
                 #endif
                 if filetypesSet:
                     subDocument['filetypes_set'] = filetypesSet
@@ -2891,14 +3877,14 @@ class riscosspider:
                     except:
                         True
                 #endif
-                if license:
-                    subDocument['license'] = license
+                if licence:
+                    subDocument['licence'] = licence
                 #endif
                 if maintainer:
                     subDocument['maintainer'] = maintainer
                 #endif
-                if minOsVers:
-                    subDocument['minimum_riscos_versions'] = minOsVers
+                if riscOsVers:
+                    subDocument['riscos_versions'] = riscOsVers
                 #endif
                 if monitorDefinitionFiles:
                     subDocument['monitor_definition_files'] = monitorDefinitionFiles
@@ -2925,17 +3911,14 @@ class riscosspider:
                     subDocument['relocatable_modules'] = relocatableModules
                 #endif
                 if relocatableModulesDependantUpon:
-                    subDocument['relocatable_modules_dependant_upon'] = relocatableModulesDependantUpon
+                    subDocument['module_dependencies'] = relocatableModulesDependantUpon
                 #endif
                 if source:
                     subDocument['source'] = source
                 #endif          
                 if territories:
                     subDocument['territories'] = list(set(territories))
-                #endif
-                if starCommands:
-                    subDocument['star_commands'] = list(set(starCommands))
-                #endif          
+                #endif         
                 if systemVariables:
                     subDocument['system_variables'] = list(set(systemVariables))
                 #endif
@@ -2954,8 +3937,9 @@ class riscosspider:
         #endfor
     #enddef   
     
-    def analyse_zip_file(self, data):
+    def analyse_zip_file(self, url, data):
         apps = []
+        latestMessage = ""
         if data:
             hashData = hashlib.md5(data).hexdigest()
             path = self.path
@@ -2985,18 +3969,19 @@ class riscosspider:
                         appDate = ""
                         appName = ""
                         appVer = ""
+                        armArchitectures = []
                         author = ""
                         categories = []
                         copyright = ""
                         description = ""
                         dtpFormats = []
                         filetypesSet = []
-                        filetypesRead = []
+                        filetypesRun = []
                         fonts = []
                         help = ""
-                        license = ""
+                        licence = ""
                         maintainer = ""
-                        minOsVers = []
+                        riscOsVers = []
                         monitorDefinitionFiles = []
                         packageName = ""
                         packageSection = ""
@@ -3008,7 +3993,6 @@ class riscosspider:
                         relocatableModulesDependantUpon = []
                         source = ""
                         territories = []
-                        starCommands = []
                         systemVariables = []
                         toolboxRequired = ""
                         utilities = []
@@ -3316,7 +4300,6 @@ class riscosspider:
                             #endif
 
                             if object.lower().startswith(appDir.lower()+'/c/') or (object.lower().startswith(appDir.lower()) and object.lower().__contains__('/c/')) or object.lower().startswith(appDir.lower()+'/h/') or (object.lower().startswith(appDir.lower()) and object.lower().__contains__('/h/')):
-                                sourceCode = True
                                 if not 'C/C++' in programmingLanguages:
                                     programmingLanguages.append('C/C++')
                                 #endif
@@ -3351,6 +4334,12 @@ class riscosspider:
                                                     appDate = appDate[:7]+'20'+appDate[7:]
                                                 #endif
                                             #endif
+                                            year = int(appDate[7:])
+                                            if appDate[3:6] in self.months:
+                                                month = self.months.index(appDate[3:6])+1
+                                            #endif
+                                            day = int(appDate[:2])
+                                            appDate = int(time.mktime((year,month,day,0,0,0,0,0,0)))
                                         #endif
                                     #endif
                                 #endif
@@ -3368,7 +4357,7 @@ class riscosspider:
 
                                     results = self.licencePattern.findall(contents)
                                     if results != []:
-                                        license = results[0]
+                                        licence = results[0]
                                     #endif
                                 except:
                                     True
@@ -3411,6 +4400,12 @@ class riscosspider:
                                                     appDate = appDate[:7]+'20'+appDate[7:]
                                                 #endif
                                             #endif
+                                            year = int(appDate[7:])
+                                            if appDate[3:6] in self.months:
+                                                month = self.months.index(appDate[3:6])+1
+                                            #endif
+                                            day = int(appDate[:2])
+                                            appDate = int(time.mktime((year,month,day,0,0,0,0,0,0)))
                                         #endif
                                     #endif
                                 #endif
@@ -3430,39 +4425,39 @@ class riscosspider:
                                 results = self.minOsVerPattern.findall(contents)
                                 if results != []:
                                     if '3.70' in results:
-                                        minOsVers.append(3.70)
+                                        riscOsVers.append(3.70)
                                     elif '3.60' in results:
-                                        minOsVers.append(3.60)
+                                        riscOsVers.append(3.60)
                                     elif '3.50' in results:
-                                        minOsVers.append(3.50)
+                                        riscOsVers.append(3.50)
                                     elif '3.11' in results:
-                                        minOsVers.append(3.11)
+                                        riscOsVers.append(3.11)
                                     elif '3.10' in results:
-                                        minOsVers.append(3.10)
+                                        riscOsVers.append(3.10)
                                     elif '3.00' in results or '3.0' in results:
-                                        minOsVers.append(3.00)
+                                        riscOsVers.append(3.00)
                                     elif '2.00' in results:
-                                        minOsVers.append(2.00)
+                                        riscOsVers.append(2.00)
                                     #endif
                                     
                                     if '6.20' in results:
-                                        minOsVers.append(6.20)
+                                        riscOsVers.append(6.20)
                                     elif '6.00' in results:
-                                        minOsVers.append(6.00)
+                                        riscOsVers.append(6.00)
                                     elif '4.00' in results:
-                                        minOsVers.append(4.00)
+                                        riscOsVers.append(4.00)
                                     #endif
                     
                                     if '5.00' in results:
-                                        minOsVers.append(5.00)
+                                        riscOsVers.append(5.00)
                                     #endif
                                 #endif
 
                                 results = self.runTypePattern.findall(contents)
                                 if results != []:
                                     for result in results:
-                                        if not result in filetypesRead:
-                                            filetypesRead.append(result)
+                                        if not result in filetypesRun:
+                                            filetypesRun.append(result)
                                         #endif
                                     #endfor
                                 #endif
@@ -3495,12 +4490,30 @@ class riscosspider:
                                 #endif
                             #endif
                         #endfor
-                        for component in [absolutes,appDate,appDir,appName,appVer,author,categories,copyright,description,dtpFormats,filetypesRead,filetypesSet,fonts,help,license,maintainer,minOsVers,monitorDefinitionFiles,packageName,packageSection,packageVersion,printerDefinitionFiles,priority,programmingLanguages,relocatableModules,relocatableModulesDependantUpon,source,territories,starCommands,systemVariables,toolboxRequired,utilities]:
+                        
+                        if riscOsVers and not armArchitectures:
+                            for riscOsVer in riscOsVers:
+                                if riscOsVer in ['3.70','3.71']:
+                                    armArchitectures.append('ARMv4')
+                                elif riscOsVer in ['3.50','3.60']:
+                                    armArchitectures.append('ARMv3')
+                                elif riscOsVer in ['2.00','3.0','3.00','3.10','3.11']: 
+                                    armArchitectures.append('ARMv2')
+                                #endif                            
+                            #endfor
+                        #endif
+                        
+                        for component in [absolutes,appDate,appDir,appName,appVer,armArchitectures,author,categories,copyright,description,dtpFormats,filetypesRun,filetypesSet,fonts,help,licence,maintainer,monitorDefinitionFiles,packageName,packageSection,packageVersion,printerDefinitionFiles,priority,programmingLanguages,relocatableModules,relocatableModulesDependantUpon,riscOsVers,source,territories,systemVariables,toolboxRequired,utilities]:
                             app.append(component)
                         #endfor
                         apps.append(app)
                     #endfor
                     z.close()
+                else:
+                    self.urlsCollection.remove({'url':url})
+                    print 'Removing from urls: '+url
+                    latestMessage = 'URL <a href="'+url+'">'+url+'</a> not a zip file!'
+                    return apps, latestMessage
                 #endif
             #endif
             try:
@@ -3508,7 +4521,7 @@ class riscosspider:
             except:
                 True
         #endif
-        return apps
+        return apps, latestMessage
     #enddef
 #endclass
 
