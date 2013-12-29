@@ -24,9 +24,25 @@ $(document).ready(function() {
 		source: "/riscos/search_computer_autocomplete"
 	});
     
+	$("#searchdealer").autocomplete({
+		source: "/riscos/search_dealer_autocomplete"
+	});
+    
+	$("#searchdeveloper").autocomplete({
+		source: "/riscos/search_developer_autocomplete"
+	});
+    
+    $("#searcherrormessage").autocomplete({
+		source: "/riscos/search_errormessage_autocomplete"
+	}); 
+    
 	$("#searchevent").autocomplete({
 		source: "/riscos/search_event_autocomplete"
 	}); 
+    
+	$("#searchfaq").autocomplete({
+		source: "/riscos/search_faq_autocomplete"
+	});    
     
 	$("#searchfiletype").autocomplete({
 		source: "/riscos/search_filetype_autocomplete"
@@ -44,6 +60,10 @@ $(document).ready(function() {
 		source: "/riscos/search_glossary_autocomplete"
 	});
     
+	$("#searchhowto").autocomplete({
+		source: "/riscos/search_howto_autocomplete"
+	});
+    
 	$("#searchmagazine").autocomplete({
 		source: "/riscos/search_magazine_autocomplete"
 	});    
@@ -56,8 +76,16 @@ $(document).ready(function() {
 		source: "/riscos/search_monitor_autocomplete"
 	});
     
+	$("#searchperipheral").autocomplete({
+		source: "/riscos/search_peripheral_autocomplete"
+	});
+    
 	$("#searchpodule").autocomplete({
 		source: "/riscos/search_podule_autocomplete"
+	});
+    
+	$("#searchproject").autocomplete({
+		source: "/riscos/search_project_autocomplete"
 	});
     
 	$("#searchprinter").autocomplete({
@@ -66,6 +94,14 @@ $(document).ready(function() {
     
 	$("#searchservice").autocomplete({
 		source: "/riscos/search_service_autocomplete"
+	});
+    
+	$("#searchsoftwareinterrupt").autocomplete({
+		source: "/riscos/search_softwareinterrupt_autocomplete"
+	});
+    
+	$("#searchstarcommand").autocomplete({
+		source: "/riscos/search_starcommand_autocomplete"
 	});
     
 	$("#searchusergroup").autocomplete({
