@@ -18,7 +18,55 @@ a:visited {
 
 body {
     font-family : Garamond, Times, "New Century Schoolbook", serif;
-    margin : 0;
+    margin : 0pt;
+    background-color : #EBF3FE;
+    background-image : url(/riscos/images/tile.png);
+}
+
+p.housekeeping {
+    font-size : 8pt;
+    color : gray;
+    text-align : right;
+    font-style : italic;
+}
+
+.riscos {
+    background-color : green;
+    color            : white;
+}
+
+div.partition {
+    border-radius : 15px;
+    -moz-border-radius : 15px;
+    -o-border-radius : 15px;
+    -webkit-border-radius : 15px;
+    background-color : white;
+    z-index : 1;
+    padding : 10px;
+    margin : 3px;
+}
+
+div.white {
+    border-radius : 15px;
+    -moz-border-radius : 15px;
+    -o-border-radius : 15px;
+    -webkit-border-radius : 15px;
+    background-color : white;
+    z-index : 1;
+    padding : 10px;
+    margin : 3px;
+}
+
+dt {
+    text-align : left;
+    font-size : 14pt;
+    font-weight : bold;
+}
+
+dd {
+    font-size : 12pt;
+    text-align : left;
+    padding : 2pt;
 }
 
 .resultheader {
@@ -38,11 +86,12 @@ body {
   -moz-border-radius : 5px;
   -o-border-radius : 5px;
   -webkit-border-radius : 5px;
-  border : #EEEEEE outset 0.1em;
+  border : maroon outset 0.1em;
   background-color : white;
   font-size : 10pt;
   margin: 2pt auto;
   margin-bottom: 48px;
+  max-width : 99%;
 }
 
 #searchcriteria, #regex {
@@ -60,8 +109,37 @@ body {
     text-align : center;
 }
 
+img.headingicon {
+    float : left;
+}
+
+p.heading {
+    text-align : center;
+    margin : 0em;
+}
+
 img {
     border : 0;
+}
+
+h3.columnheading {
+    background-color : maroon;
+    color : #FDE990;
+}
+
+#syndicatedfeed {
+    border : 5pt;
+    padding : 5pt;
+    margin : 5pt;    
+}
+
+#syndicatedfeed td {
+    background-color : #333333;
+    color : white;
+    border : 5pt;
+    padding : 5pt;
+    margin : 5pt;
+    text-align : left;    
 }
 
 .sourcecode {
@@ -99,6 +177,18 @@ li {
     margin : 0px;
 }
 
+#topbar {
+    background-color : #1B1E23;
+    //background-image : url(/riscos/images/black.jpg);
+    padding : 3pt;
+}
+
+h3.underlined {
+    text-align : left;
+    text-decoration: underline;
+    width : 100%;
+}
+
 .error {
    color : red;
 }
@@ -110,33 +200,56 @@ li {
 
 .software th, #searchcriteria th, #regex th {
     background-color : #C0DBF2;
+    background-image : url(/riscos/images/t5l.png);
     color : maroon;
     font-size : 12pt;
 }
 
 .software td, #searchcriteria td, #regex td {
-    background-color : #EBF3FE;
+    background-color : white;
     color : black;
     font-size : 12pt;
+    border : 1px dotted #AAAAAA;
 }
 
 #header {
+    //background-image : url(/riscos/images/red.jpg);
     background-color : maroon;
     color : #FDE990;
     width : 100%;
-    left : 0pt;
-    top : 0;
-    margin : auto;
-    padding : 1pt;
+    left : 0px;
+    top : 0px;
+    margin : 0px;
+    padding : 0px;
+    border-collapse : collapse;
+}
+
+#lowerbuttonbar {
+    padding : 2pt;
+    margin : 0px;
+}
+
+#upperbuttonbar {
+    padding : 2pt;
+    margin : 0px;
+}
+
+#logo {
+    margin : 0pt;  
+    padding : 2pt;
+}
+
+#titlebar {
+    margin : 0pt;  
+    padding : 2pt;   
 }
 
 #title {
-    background-color : maroon;
     color : #FDE990;
     font-size : 20pt;
     text-align : center;
     text-shadow : 0 0 0.1em #F00;
-    margin : 0pt;
+    display : inline;
 }
 
 #infobar {
@@ -183,16 +296,33 @@ input.rescan {
     color : white;
 }
 
-input.basket {
+input.watchlist {
     font-size : 10pt;
     background-color : maroon;
     color : #FDE990;
     border : #1B1E23 solid 0.1em;
 }
 
-input.basket:hover {
+input.watchlist:hover {
     color : maroon;
     background-color : #FDE990;
+}
+
+p.json {
+    text-align : left;
+    color : gray;
+}
+
+b.key {
+    color : blue;
+}
+
+b.element {
+    color : green;
+}
+
+b.value {
+    color : green;
 }
 
 select {
@@ -214,6 +344,8 @@ input.button:hover {
 
 td.filter {
     background-color : #1B1E23;
+    //background-image : url(/riscos/images/black.jpg);
+    padding : 3pt;
 }
 
 table.filter {
@@ -248,6 +380,13 @@ b.inverse {
 #introduction {
     margin-left : 10%;
     margin-right : 10%;
+    border-radius : 15px;
+    -moz-border-radius : 15px;
+    -o-border-radius : 15px;
+    -webkit-border-radius : 15px;
+    background-color : white;
+    z-index : 1;
+    padding : 10px;
 }
 
 .report {
@@ -263,6 +402,7 @@ b.inverse {
 p.introduction, .report {
     color : black;
     text-align : left;
+    text-indent : 2em;
 }
 
 p.key {
@@ -301,7 +441,7 @@ tr.zebra {
     font-size : 10pt;
     color : #FDE990;
     background-color : maroon;
-    background-image : url(/images/blue.jpg);
+    //background-image : url(/riscos/images/red.jpg);
     background-repeat: repeat;
     background-attachment : scroll;
     background-position : 0% 0%;
